@@ -112,6 +112,9 @@
       await loadScript("./smart-drop.js");
       setStatus("Smart Drop patch loaded.");
 
+      await loadScript("./smart-sizing.js");
+      setStatus("Smart sizing patch loaded.");
+
       await loadScript("./connection-focus.js");
       setStatus("Connection focus patch loaded.");
 
