@@ -51,6 +51,31 @@
       background: transparent;
       cursor: pointer;
     }
+
+    .hud-controls button {
+      border: 1px solid #555;
+      background: #242424;
+      color: #d8d8d8;
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .hud-controls select {
+      border: 1px solid #555;
+      background: #242424;
+      color: #d8d8d8;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .hud-controls button:hover {
+      border-color: #777;
+      background: #2c2c2c;
+    }
   </style>
 </head>
 <body>
@@ -62,6 +87,13 @@
     <div class="hud-controls">
       <label for="focus-pulse-color">Flow color</label>
       <input id="focus-pulse-color" type="color" value="#ff00ae" />
+      <label for="focus-connector-style">Connector</label>
+      <select id="focus-connector-style">
+        <option value="hybrid">Hybrid</option>
+        <option value="straight">Straight</option>
+        <option value="angled">Angled</option>
+      </select>
+      <button id="reset-workspace-btn" type="button">Reset Workspace</button>
     </div>
   </div>
   <div id="status-overlay" style="position:fixed;right:12px;top:12px;z-index:1001;background:rgba(0,0,0,0.75);border:1px solid #404040;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.35;max-width:420px;white-space:pre-wrap"></div>

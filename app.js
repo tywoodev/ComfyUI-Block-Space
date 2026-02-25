@@ -19,9 +19,26 @@
   }
   var WORKSPACE_STORAGE_KEY = "comfy-better-nodes.workspace.v1";
 
+  function bindResetWorkspaceButton() {
+    var button = document.getElementById("reset-workspace-btn");
+    if (!button) {
+      return;
+    }
+    button.addEventListener("click", function () {
+      try {
+        window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+      } catch (error) {
+        reportStatus("Failed to clear workspace: " + (error && error.message ? error.message : String(error)), true);
+        return;
+      }
+      window.location.reload();
+    });
+  }
+
   function SourceMaskNode() {
     this.addOutput("mask", "MASK");
-    this.size = [180, 60];
+    this.addOutput("strength", "NUMBER");
+    this.size = [180, 80];
   }
   SourceMaskNode.title = "Source MASK";
   SourceMaskNode.prototype.onExecute = function () {};
@@ -104,6 +121,58 @@
     return true;
   }
 
+  function ensureNodeIoSchema() {
+    var nodes = graph && graph._nodes ? graph._nodes : [];
+    for (var i = 0; i < nodes.length; i += 1) {
+      var node = nodes[i];
+      if (!node) {
+        continue;
+      }
+
+      if (node.type === "demo/source_mask") {
+        if (!Array.isArray(node.outputs)) {
+          node.outputs = [];
+        }
+
+        var maskOutput = null;
+        var strengthOutput = null;
+        for (var outIndex = 0; outIndex < node.outputs.length; outIndex += 1) {
+          var output = node.outputs[outIndex];
+          if (!output) {
+            continue;
+          }
+          if (output.name === "mask") {
+            maskOutput = output;
+          } else if (output.name === "strength") {
+            strengthOutput = output;
+          }
+        }
+
+        if (!maskOutput) {
+          node.addOutput("mask", "MASK");
+          maskOutput = node.outputs[node.outputs.length - 1];
+        }
+        maskOutput.type = "MASK";
+
+        if (!strengthOutput) {
+          node.addOutput("strength", "NUMBER");
+          strengthOutput = node.outputs[node.outputs.length - 1];
+        }
+        strengthOutput.type = "NUMBER";
+        node.size = [180, 80];
+      }
+
+      if (node.type === "demo/no_image_inputs" && Array.isArray(node.inputs)) {
+        for (var inIndex = 0; inIndex < node.inputs.length; inIndex += 1) {
+          var input = node.inputs[inIndex];
+          if (input && input.name === "strength") {
+            input.type = "NUMBER";
+          }
+        }
+      }
+    }
+  }
+
   function saveWorkspace() {
     try {
       var serialized = graph.serialize();
@@ -144,6 +213,8 @@
       return;
     }
   }
+  ensureNodeIoSchema();
+  bindResetWorkspaceButton();
 
   function resizeCanvasToWindow() {
     canvasElement.width = window.innerWidth;
