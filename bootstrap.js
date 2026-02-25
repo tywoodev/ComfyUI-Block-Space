@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  var LOCAL_ASSET_VERSION = "2026-02-25-phase4-grid-border-gap-1";
+  var LOCAL_ASSET_VERSION = "2026-02-25-collapse-smartgrid-v1";
 
   var statusLines = [];
   var statusEl = document.getElementById("status-overlay");
