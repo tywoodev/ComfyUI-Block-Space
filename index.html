@@ -33,24 +33,26 @@
       font-size: 13px;
       line-height: 1.4;
       pointer-events: auto;
+      max-width: 290px;
     }
 
     .hud-controls {
       margin-top: 8px;
-      display: flex;
+      display: grid;
+      grid-template-columns: 1fr auto;
       align-items: center;
-      flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px 8px;
       font-size: 12px;
     }
 
     .hud-controls input[type="color"] {
-      width: 30px;
-      height: 20px;
+      width: 36px;
+      height: 22px;
       border: 0;
       padding: 0;
       background: transparent;
       cursor: pointer;
+      justify-self: end;
     }
 
     .hud-controls button {
@@ -71,16 +73,23 @@
       padding: 2px 6px;
       font-size: 12px;
       cursor: pointer;
+      width: 118px;
     }
 
     .hud-controls input[type="number"] {
-      width: 52px;
+      width: 64px;
       border: 1px solid #555;
       background: #242424;
       color: #d8d8d8;
       border-radius: 4px;
       padding: 2px 4px;
       font-size: 12px;
+      justify-self: end;
+    }
+
+    .hud-controls button {
+      grid-column: 1 / -1;
+      justify-self: start;
     }
 
     .hud-controls button:hover {
@@ -114,6 +123,10 @@
       <input id="smartgrid-node-gap" type="number" min="8" max="140" step="1" value="40" />
       <label for="smartgrid-border-gap">Border gap</label>
       <input id="smartgrid-border-gap" type="number" min="0" max="30" step="1" value="6" />
+      <label for="smartgrid-divider-width">Divider width</label>
+      <input id="smartgrid-divider-width" type="number" min="1" max="5" step="1" value="2" />
+      <label for="smartgrid-divider-color">Divider color</label>
+      <input id="smartgrid-divider-color" type="color" value="#ffffff" />
       <button id="reset-workspace-btn" type="button">Reset Workspace</button>
     </div>
   </div>

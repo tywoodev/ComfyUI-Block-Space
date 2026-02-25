@@ -26,6 +26,7 @@
     nodeVerticalGap: 40,
     borderJunctionGap: 6,
     gridLineWidth: 2,
+    gridLineColor: "#ffffff",
     gridLineAlpha: 0.32,
   };
   var gridSettings = {
@@ -35,6 +36,7 @@
     nodeVerticalGap: DEFAULT_GRID_SETTINGS.nodeVerticalGap,
     borderJunctionGap: DEFAULT_GRID_SETTINGS.borderJunctionGap,
     gridLineWidth: DEFAULT_GRID_SETTINGS.gridLineWidth,
+    gridLineColor: DEFAULT_GRID_SETTINGS.gridLineColor,
     gridLineAlpha: DEFAULT_GRID_SETTINGS.gridLineAlpha,
   };
   var ROW_PADDING = gridSettings.rowPadding;
@@ -44,6 +46,7 @@
   var NODE_VERTICAL_GAP = gridSettings.nodeVerticalGap;
   var BORDER_JUNCTION_GAP = gridSettings.borderJunctionGap;
   var GRID_LINE_WIDTH = gridSettings.gridLineWidth;
+  var GRID_LINE_COLOR = gridSettings.gridLineColor;
   var GRID_LINE_ALPHA = gridSettings.gridLineAlpha;
 
   var originalOnGroupAdd = window.LGraphCanvas.onGroupAdd;
@@ -73,6 +76,41 @@
 
   function clampNumber(value, min, max) {
     return Math.max(min, Math.min(max, value));
+  }
+
+  function normalizeHexColor(value, fallback) {
+    if (typeof value !== "string") {
+      return fallback;
+    }
+    var trimmed = value.trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
+      return trimmed.toLowerCase();
+    }
+    if (/^#[0-9a-fA-F]{3}$/.test(trimmed)) {
+      return (
+        "#" +
+        trimmed.charAt(1) +
+        trimmed.charAt(1) +
+        trimmed.charAt(2) +
+        trimmed.charAt(2) +
+        trimmed.charAt(3) +
+        trimmed.charAt(3)
+      ).toLowerCase();
+    }
+    return fallback;
+  }
+
+  function parseHexColor(hex) {
+    return {
+      r: parseInt(hex.slice(1, 3), 16),
+      g: parseInt(hex.slice(3, 5), 16),
+      b: parseInt(hex.slice(5, 7), 16),
+    };
+  }
+
+  function buildRgba(hex, alpha) {
+    var rgb = parseHexColor(normalizeHexColor(hex, "#ffffff"));
+    return "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + "," + alpha + ")";
   }
 
   function applyGridSettings(partial, skipPersist) {
@@ -110,6 +148,10 @@
       1,
       5
     );
+    gridSettings.gridLineColor = normalizeHexColor(
+      partial.gridLineColor,
+      gridSettings.gridLineColor
+    );
     gridSettings.gridLineAlpha = clampNumber(
       toNumber(partial.gridLineAlpha, gridSettings.gridLineAlpha),
       0.1,
@@ -123,6 +165,7 @@
     NODE_VERTICAL_GAP = gridSettings.nodeVerticalGap;
     BORDER_JUNCTION_GAP = gridSettings.borderJunctionGap;
     GRID_LINE_WIDTH = gridSettings.gridLineWidth;
+    GRID_LINE_COLOR = gridSettings.gridLineColor;
     GRID_LINE_ALPHA = gridSettings.gridLineAlpha;
     if (window.SmartGrid) {
       window.SmartGrid.ROW_PADDING = ROW_PADDING;
@@ -1236,7 +1279,7 @@
     var hover = canvas.__smartGridHover;
 
     ctx.save();
-    ctx.strokeStyle = "rgba(255,255,255," + GRID_LINE_ALPHA + ")";
+    ctx.strokeStyle = buildRgba(GRID_LINE_COLOR, GRID_LINE_ALPHA);
     ctx.lineWidth = GRID_LINE_WIDTH;
 
     for (var r = 0; r < geometry.rows.length; r += 1) {
@@ -1378,7 +1421,17 @@
     var bottomPaddingInput = document.getElementById("smartgrid-bottom-padding");
     var nodeGapInput = document.getElementById("smartgrid-node-gap");
     var borderGapInput = document.getElementById("smartgrid-border-gap");
-    if (!rowPaddingInput || !topPaddingInput || !bottomPaddingInput || !nodeGapInput || !borderGapInput) {
+    var dividerWidthInput = document.getElementById("smartgrid-divider-width");
+    var dividerColorInput = document.getElementById("smartgrid-divider-color");
+    if (
+      !rowPaddingInput ||
+      !topPaddingInput ||
+      !bottomPaddingInput ||
+      !nodeGapInput ||
+      !borderGapInput ||
+      !dividerWidthInput ||
+      !dividerColorInput
+    ) {
       return false;
     }
     rowPaddingInput.value = String(Math.round(gridSettings.rowPadding));
@@ -1386,6 +1439,8 @@
     bottomPaddingInput.value = String(Math.round(gridSettings.rowBottomPadding));
     nodeGapInput.value = String(Math.round(gridSettings.nodeVerticalGap));
     borderGapInput.value = String(Math.round(gridSettings.borderJunctionGap));
+    dividerWidthInput.value = String(Math.round(gridSettings.gridLineWidth));
+    dividerColorInput.value = normalizeHexColor(gridSettings.gridLineColor, "#ffffff");
     return true;
   }
 
@@ -1395,7 +1450,17 @@
     var bottomPaddingInput = document.getElementById("smartgrid-bottom-padding");
     var nodeGapInput = document.getElementById("smartgrid-node-gap");
     var borderGapInput = document.getElementById("smartgrid-border-gap");
-    if (!rowPaddingInput || !topPaddingInput || !bottomPaddingInput || !nodeGapInput || !borderGapInput) {
+    var dividerWidthInput = document.getElementById("smartgrid-divider-width");
+    var dividerColorInput = document.getElementById("smartgrid-divider-color");
+    if (
+      !rowPaddingInput ||
+      !topPaddingInput ||
+      !bottomPaddingInput ||
+      !nodeGapInput ||
+      !borderGapInput ||
+      !dividerWidthInput ||
+      !dividerColorInput
+    ) {
       return false;
     }
 
@@ -1411,6 +1476,8 @@
         rowBottomPadding: bottomPaddingInput.value,
         nodeVerticalGap: nodeGapInput.value,
         borderJunctionGap: borderGapInput.value,
+        gridLineWidth: dividerWidthInput.value,
+        gridLineColor: dividerColorInput.value,
       });
       var activeCanvas = window.LGraphCanvas.active_canvas;
       if (activeCanvas && activeCanvas.graph) {
@@ -1426,16 +1493,22 @@
     bottomPaddingInput.addEventListener("input", applyFromHud);
     nodeGapInput.addEventListener("input", applyFromHud);
     borderGapInput.addEventListener("input", applyFromHud);
+    dividerWidthInput.addEventListener("input", applyFromHud);
+    dividerColorInput.addEventListener("input", applyFromHud);
     rowPaddingInput.addEventListener("change", applyFromHud);
     topPaddingInput.addEventListener("change", applyFromHud);
     bottomPaddingInput.addEventListener("change", applyFromHud);
     nodeGapInput.addEventListener("change", applyFromHud);
     borderGapInput.addEventListener("change", applyFromHud);
+    dividerWidthInput.addEventListener("change", applyFromHud);
+    dividerColorInput.addEventListener("change", applyFromHud);
     rowPaddingInput.__smartGridBound = true;
     topPaddingInput.__smartGridBound = true;
     bottomPaddingInput.__smartGridBound = true;
     nodeGapInput.__smartGridBound = true;
     borderGapInput.__smartGridBound = true;
+    dividerWidthInput.__smartGridBound = true;
+    dividerColorInput.__smartGridBound = true;
     syncHudWithGridSettings();
     return true;
   }
@@ -2125,6 +2198,7 @@
         nodeVerticalGap: gridSettings.nodeVerticalGap,
         borderJunctionGap: gridSettings.borderJunctionGap,
         gridLineWidth: gridSettings.gridLineWidth,
+        gridLineColor: gridSettings.gridLineColor,
         gridLineAlpha: gridSettings.gridLineAlpha,
       };
     },
