@@ -207,40 +207,55 @@
       return null;
     }
 
-    var targetNodeIds = {};
+    var connectedNodeIds = {};
+    var connectedLinkIds = {};
     var targetInputsByNode = {};
+    var sourceOutputSlotsByNode = {};
     var activeOutputSlots = {};
+    var activeInputSlots = {};
 
-    if (Array.isArray(activeNode.outputs) && graph.links) {
-      for (var outIndex = 0; outIndex < activeNode.outputs.length; outIndex += 1) {
-        var output = activeNode.outputs[outIndex];
-        if (!output || !Array.isArray(output.links) || output.links.length === 0) {
+    if (graph.links) {
+      for (var linkId in graph.links) {
+        if (!Object.prototype.hasOwnProperty.call(graph.links, linkId)) {
+          continue;
+        }
+        var link = graph.links[linkId];
+        if (!link) {
           continue;
         }
 
-        for (var i = 0; i < output.links.length; i += 1) {
-          var linkId = output.links[i];
-          var link = graph.links[linkId];
-          if (!link || link.origin_id !== activeNode.id) {
-            continue;
-          }
-
-          activeOutputSlots[outIndex] = true;
-          targetNodeIds[link.target_id] = true;
+        if (link.origin_id === activeNode.id) {
+          connectedNodeIds[link.target_id] = true;
+          connectedLinkIds[linkId] = true;
+          activeOutputSlots[link.origin_slot] = true;
 
           if (!targetInputsByNode[link.target_id]) {
             targetInputsByNode[link.target_id] = {};
           }
           targetInputsByNode[link.target_id][link.target_slot] = true;
         }
+
+        if (link.target_id === activeNode.id) {
+          connectedNodeIds[link.origin_id] = true;
+          connectedLinkIds[linkId] = true;
+          activeInputSlots[link.target_slot] = true;
+
+          if (!sourceOutputSlotsByNode[link.origin_id]) {
+            sourceOutputSlotsByNode[link.origin_id] = {};
+          }
+          sourceOutputSlotsByNode[link.origin_id][link.origin_slot] = true;
+        }
       }
     }
 
     return {
       activeNodeId: activeNode.id,
-      targetNodeIds: targetNodeIds,
+      connectedNodeIds: connectedNodeIds,
+      connectedLinkIds: connectedLinkIds,
       targetInputsByNode: targetInputsByNode,
+      sourceOutputSlotsByNode: sourceOutputSlotsByNode,
       activeOutputSlots: activeOutputSlots,
+      activeInputSlots: activeInputSlots,
       animationTime: focusState.animationTime,
     };
   }
@@ -331,8 +346,8 @@
       return originalRenderLink.apply(this, arguments);
     }
 
-    var isOutgoing = link.origin_id === focus.activeNodeId;
-    if (!isOutgoing) {
+    var isConnected = link.origin_id === focus.activeNodeId || link.target_id === focus.activeNodeId;
+    if (!isConnected) {
       ctx.save();
       ctx.globalAlpha = ctx.globalAlpha * 0.12;
       var dimResult = originalRenderLink.apply(this, arguments);
@@ -353,8 +368,8 @@
       }
 
       var isActiveNode = node.id === focus.activeNodeId;
-      var isTargetNode = !!focus.targetNodeIds[node.id];
-      var shouldDimNode = !isActiveNode && !isTargetNode;
+      var isConnectedNode = isActiveNode || !!focus.connectedNodeIds[node.id];
+      var shouldDimNode = !isConnectedNode;
 
       var result;
       if (shouldDimNode) {
@@ -374,12 +389,24 @@
         for (var i = 0; i < outputIndices.length; i += 1) {
           drawSlotRing(node, ctx, false, Number(outputIndices[i]), pulseColor);
         }
-      }
 
-      if (isTargetNode && focus.targetInputsByNode[node.id]) {
-        var inputIndices = Object.keys(focus.targetInputsByNode[node.id]);
+        var inputIndices = Object.keys(focus.activeInputSlots);
         for (var j = 0; j < inputIndices.length; j += 1) {
           drawSlotRing(node, ctx, true, Number(inputIndices[j]), pulseColor);
+        }
+      }
+
+      if (focus.targetInputsByNode[node.id]) {
+        var targetInputIndices = Object.keys(focus.targetInputsByNode[node.id]);
+        for (var k = 0; k < targetInputIndices.length; k += 1) {
+          drawSlotRing(node, ctx, true, Number(targetInputIndices[k]), pulseColor);
+        }
+      }
+
+      if (focus.sourceOutputSlotsByNode[node.id]) {
+        var sourceOutputIndices = Object.keys(focus.sourceOutputSlotsByNode[node.id]);
+        for (var l = 0; l < sourceOutputIndices.length; l += 1) {
+          drawSlotRing(node, ctx, false, Number(sourceOutputIndices[l]), pulseColor);
         }
       }
 
