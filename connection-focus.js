@@ -485,12 +485,11 @@
   }
 
   function drawAngledPath(ctx, ax, ay, bx, by, stub) {
-    // Slanted center segment while keeping fixed endpoint stubs for traceability.
+    // Fixed-length endpoint stubs with a single angled center segment.
     var startX = ax + stub;
     var endX = bx - stub;
     var needsDetour = endX <= startX + 8;
     var laneX = Math.max(startX, endX) + stub;
-    var midX = (startX + endX) * 0.5;
 
     ctx.beginPath();
     ctx.moveTo(ax, ay);
@@ -498,8 +497,8 @@
     if (needsDetour) {
       ctx.lineTo(laneX, ay);
       ctx.lineTo(laneX, by);
+      ctx.lineTo(endX, by);
     } else {
-      ctx.lineTo(midX, (ay + by) * 0.5);
       ctx.lineTo(endX, by);
     }
     ctx.lineTo(bx, by);
