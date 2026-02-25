@@ -1,5 +1,6 @@
 (function () {
   "use strict";
+  var LOCAL_ASSET_VERSION = "2026-02-25-phase4-sizing-conflict-1";
 
   var statusLines = [];
   var statusEl = document.getElementById("status-overlay");
@@ -109,16 +110,19 @@
         throw new Error("LiteGraph globals are unavailable after script load.");
       }
 
-      await loadScript("./smart-drop.js");
+      await loadScript("./smart-drop.js?v=" + LOCAL_ASSET_VERSION);
       setStatus("Smart Drop patch loaded.");
 
-      await loadScript("./smart-sizing.js");
+      await loadScript("./smart-sizing.js?v=" + LOCAL_ASSET_VERSION);
       setStatus("Smart sizing patch loaded.");
 
-      await loadScript("./connection-focus.js");
+      await loadScript("./connection-focus.js?v=" + LOCAL_ASSET_VERSION);
       setStatus("Connection focus patch loaded.");
 
-      await loadScript("./app.js");
+      await loadScript("./smart-grid-container.js?v=" + LOCAL_ASSET_VERSION);
+      setStatus("Smart grid container patch loaded.");
+
+      await loadScript("./app.js?v=" + LOCAL_ASSET_VERSION);
       setStatus("Demo graph initialized.");
     } catch (error) {
       var message = error && error.message ? error.message : String(error);

@@ -1,13 +1,24 @@
 (function () {
   "use strict";
 
+  var PATCH_VERSION = "2026-02-25-phase4-fixes-1";
+
   if (typeof window.LiteGraph === "undefined" || typeof window.LGraphNode === "undefined") {
     console.error("[SmartSizing] LiteGraph is unavailable.");
     return;
   }
 
   if (window.LGraphNode.prototype.__smartSizingPatched) {
-    return;
+    if (window.LGraphNode.prototype.__smartSizingPatchVersion === PATCH_VERSION) {
+      return;
+    }
+    // Upgrade path: restore originals first, then apply latest patch.
+    if (typeof window.LGraphNode.prototype.__smartSizingOriginalComputeSize === "function") {
+      window.LGraphNode.prototype.computeSize = window.LGraphNode.prototype.__smartSizingOriginalComputeSize;
+    }
+    if (typeof window.LGraphNode.prototype.__smartSizingOriginalSetSize === "function") {
+      window.LGraphNode.prototype.setSize = window.LGraphNode.prototype.__smartSizingOriginalSetSize;
+    }
   }
 
   var MIN_NODE_WIDTH = 150;
@@ -191,7 +202,7 @@
     minHeight += 6;
 
     var resizing = isNodeBeingResized(this);
-    if (!resizing && this.__smartUserSize && this.__smartUserSize.length >= 2) {
+    if (!resizing && !this.__smartGridManaged && this.__smartUserSize && this.__smartUserSize.length >= 2) {
       minWidth = Math.max(minWidth, this.__smartUserSize[0]);
       minHeight = Math.max(minHeight, this.__smartUserSize[1]);
     }
@@ -303,6 +314,7 @@
   };
 
   window.LGraphNode.prototype.__smartSizingPatched = true;
+  window.LGraphNode.prototype.__smartSizingPatchVersion = PATCH_VERSION;
   window.LGraphNode.prototype.__smartSizingOriginalComputeSize = originalComputeSize;
   window.LGraphNode.prototype.__smartSizingOriginalSetSize = originalSetSize;
 })();
