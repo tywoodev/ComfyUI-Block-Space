@@ -241,10 +241,11 @@
         if (!link) {
           continue;
         }
+        var linkKey = link.id != null ? link.id : linkId;
 
         if (link.origin_id === activeNode.id) {
           connectedNodeIds[link.target_id] = true;
-          connectedLinkIds[linkId] = true;
+          connectedLinkIds[linkKey] = true;
           activeOutputSlots[link.origin_slot] = true;
 
           if (!targetInputsByNode[link.target_id]) {
@@ -255,7 +256,7 @@
 
         if (link.target_id === activeNode.id) {
           connectedNodeIds[link.origin_id] = true;
-          connectedLinkIds[linkId] = true;
+          connectedLinkIds[linkKey] = true;
           activeInputSlots[link.target_slot] = true;
 
           if (!sourceOutputSlotsByNode[link.origin_id]) {
@@ -364,7 +365,13 @@
       return originalRenderLink.apply(this, arguments);
     }
 
-    var isConnected = link.origin_id === focus.activeNodeId || link.target_id === focus.activeNodeId;
+    var linkKey = link.id != null ? link.id : null;
+    var isConnected = false;
+    if (linkKey != null && focus.connectedLinkIds[linkKey]) {
+      isConnected = true;
+    } else if (focus.connectedLinkIds[String(linkKey)]) {
+      isConnected = true;
+    }
     if (!isConnected) {
       ctx.save();
       ctx.globalAlpha = ctx.globalAlpha * 0.12;
@@ -374,7 +381,9 @@
     }
 
     var result = originalRenderLink.apply(this, arguments);
-    drawFlowOverlay(this, arguments, focus.animationTime || 0);
+    if (link.origin_id === focus.activeNodeId || link.target_id === focus.activeNodeId) {
+      drawFlowOverlay(this, arguments, focus.animationTime || 0);
+    }
     return result;
   };
 
