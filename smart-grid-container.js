@@ -58,10 +58,18 @@
   var COLLAPSE_BUTTON_HEIGHT = 18;
   var COLLAPSED_GROUP_HEIGHT = HEADER_HEIGHT + 30;
   var COLLAPSED_ANCHOR_GAP = 14;
+  var COLLAPSED_HEADER_SIDE_PADDING = 12;
+  var COLLAPSED_TITLE_BUTTON_GAP = 10;
+  var COLLAPSED_PROXY_LABEL_PADDING = 10;
+  var COLLAPSED_PROXY_LABEL_CENTER_GAP = 24;
+  var COLLAPSED_MIN_WIDTH = 180;
+  var COLLAPSED_TITLE_FONT = "bold 16px Arial";
+  var MAX_COLLAPSED_TITLE_WIDTH = 280;
 
   var originalOnGroupAdd = window.LGraphCanvas.onGroupAdd;
   var originalGroupSerialize = window.LGraphGroup.prototype.serialize;
   var originalGroupConfigure = window.LGraphGroup.prototype.configure;
+  var originalGroupRecomputeInsideNodes = window.LGraphGroup.prototype.recomputeInsideNodes;
   var originalDrawGroups = window.LGraphCanvas.prototype.drawGroups;
   var originalRenderLink = window.LGraphCanvas.prototype.renderLink;
   var originalDrawNode = window.LGraphCanvas.prototype.drawNode;
@@ -295,7 +303,47 @@
     if (!group.__isSmartGrid) {
       group.__isSmartGrid = true;
     }
+    syncSmartGridGroupChildren(group);
     return group.__smartGridState;
+  }
+
+  function getManagedNodeRefs(group) {
+    if (!group || !group.graph || !group.__isSmartGrid) {
+      return [];
+    }
+    var state = group.__smartGridState;
+    if (!state || !Array.isArray(state.rows)) {
+      return [];
+    }
+    var nodeRefs = [];
+    var seen = {};
+    for (var r = 0; r < state.rows.length; r += 1) {
+      var row = state.rows[r];
+      var cols = row && Array.isArray(row.columns) ? row.columns : [];
+      for (var c = 0; c < cols.length; c += 1) {
+        var ids = Array.isArray(cols[c].childNodeIds) ? cols[c].childNodeIds : [];
+        for (var i = 0; i < ids.length; i += 1) {
+          var nodeId = ids[i];
+          if (nodeId == null || seen[nodeId]) {
+            continue;
+          }
+          var node = getNodeById(group.graph, nodeId);
+          if (!node) {
+            continue;
+          }
+          seen[nodeId] = true;
+          nodeRefs.push(node);
+        }
+      }
+    }
+    return nodeRefs;
+  }
+
+  function syncSmartGridGroupChildren(group) {
+    if (!group || !group.__isSmartGrid) {
+      return;
+    }
+    group._nodes = getManagedNodeRefs(group);
   }
 
   function isGroupCollapsed(group) {
@@ -879,6 +927,145 @@
     };
   }
 
+  var __smartGridMeasureCtx = null;
+  function measureTextWidth(text, font) {
+    if (!__smartGridMeasureCtx && typeof document !== "undefined") {
+      var canvas = document.createElement("canvas");
+      __smartGridMeasureCtx = canvas.getContext("2d");
+    }
+    if (!__smartGridMeasureCtx) {
+      return String(text || "").length * 8;
+    }
+    __smartGridMeasureCtx.save();
+    if (font) {
+      __smartGridMeasureCtx.font = font;
+    }
+    var width = __smartGridMeasureCtx.measureText(String(text || "")).width;
+    __smartGridMeasureCtx.restore();
+    return width || 0;
+  }
+
+  function clipTextToWidth(text, maxWidth, font) {
+    var value = String(text || "");
+    if (maxWidth <= 0) {
+      return "";
+    }
+    if (measureTextWidth(value, font) <= maxWidth) {
+      return value;
+    }
+    var ellipsis = "...";
+    var ellipsisWidth = measureTextWidth(ellipsis, font);
+    if (ellipsisWidth >= maxWidth) {
+      return "";
+    }
+    var lo = 0;
+    var hi = value.length;
+    while (lo < hi) {
+      var mid = Math.ceil((lo + hi) * 0.5);
+      var candidate = value.slice(0, mid) + ellipsis;
+      if (measureTextWidth(candidate, font) <= maxWidth) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return value.slice(0, lo) + ellipsis;
+  }
+
+  function getCollapsedTitleMaxWidth(group) {
+    if (!group || !group.pos || !group.size) {
+      return MAX_COLLAPSED_TITLE_WIDTH;
+    }
+    var collapseRect = getCollapseButtonRect(group);
+    var left = group.pos[0] + COLLAPSED_HEADER_SIDE_PADDING;
+    var right = collapseRect
+      ? collapseRect.x - COLLAPSED_TITLE_BUTTON_GAP
+      : (group.pos[0] + group.size[0] - COLLAPSED_HEADER_SIDE_PADDING);
+    return Math.max(40, Math.min(MAX_COLLAPSED_TITLE_WIDTH, right - left));
+  }
+
+  function getCollapsedDisplayTitle(group) {
+    var title = group && group.title ? group.title : "Group";
+    var maxWidth = getCollapsedTitleMaxWidth(group);
+    return clipTextToWidth(title, maxWidth, COLLAPSED_TITLE_FONT);
+  }
+
+  function getAnyGraphCanvas(graph) {
+    if (!graph || !graph.list_of_graphcanvas || !graph.list_of_graphcanvas.length) {
+      return null;
+    }
+    for (var i = 0; i < graph.list_of_graphcanvas.length; i += 1) {
+      if (graph.list_of_graphcanvas[i]) {
+        return graph.list_of_graphcanvas[i];
+      }
+    }
+    return null;
+  }
+
+  function getCollapsedProxyWidthRequirement(group, canvas) {
+    if (!group || !group.graph) {
+      return 0;
+    }
+    var proxyState = null;
+    if (canvas && canvas.__smartGridProxyState) {
+      proxyState = canvas.__smartGridProxyState;
+    } else {
+      proxyState = getCollapsedGroupProxyState(group.graph);
+    }
+    var meta = findGroupMetaForProxy(proxyState, group);
+    if (!meta) {
+      return 0;
+    }
+    var maxInbound = 0;
+    var maxOutbound = 0;
+    var inCounts = meta.inboundCounts || {};
+    var outCounts = meta.outboundCounts || {};
+    for (var inType in inCounts) {
+      if (!Object.prototype.hasOwnProperty.call(inCounts, inType)) {
+        continue;
+      }
+      var inLabel = String(inType) + " x" + String(inCounts[inType] || 0);
+      maxInbound = Math.max(maxInbound, measureTextWidth(inLabel, "10px Arial"));
+    }
+    for (var outType in outCounts) {
+      if (!Object.prototype.hasOwnProperty.call(outCounts, outType)) {
+        continue;
+      }
+      var outLabel = String(outType) + " x" + String(outCounts[outType] || 0);
+      maxOutbound = Math.max(maxOutbound, measureTextWidth(outLabel, "10px Arial"));
+    }
+    if (!maxInbound && !maxOutbound) {
+      return 0;
+    }
+    return Math.ceil(
+      COLLAPSED_PROXY_LABEL_PADDING * 2 +
+      8 + maxInbound +
+      COLLAPSED_PROXY_LABEL_CENTER_GAP +
+      8 + maxOutbound
+    );
+  }
+
+  function computeCollapsedGroupWidth(group, canvas) {
+    if (!group) {
+      return COLLAPSED_MIN_WIDTH;
+    }
+    var title = group.title || "Group";
+    var buttonWidth = Math.min(COLLAPSE_BUTTON_WIDTH, Math.max(56, Math.floor(COLLAPSED_MIN_WIDTH * 0.45)));
+    var titleWidth = Math.min(
+      MAX_COLLAPSED_TITLE_WIDTH,
+      Math.ceil(measureTextWidth(title, COLLAPSED_TITLE_FONT))
+    );
+    var headerWidth = Math.ceil(
+      COLLAPSED_HEADER_SIDE_PADDING * 2 +
+      titleWidth +
+      COLLAPSED_TITLE_BUTTON_GAP +
+      buttonWidth
+    );
+    var proxyWidth = getCollapsedProxyWidthRequirement(group, canvas);
+    var nextWidth = Math.max(COLLAPSED_MIN_WIDTH, headerWidth, proxyWidth);
+    return Math.max(COLLAPSED_MIN_WIDTH, roundToSnapPixels(nextWidth));
+  }
+
   function pointInRect(x, y, rect) {
     return (
       !!rect &&
@@ -943,6 +1130,7 @@
     if (target) {
       state.expandedSize = [group.size[0], group.size[1]];
       state.collapsed = true;
+      group.size[0] = computeCollapsedGroupWidth(group, getAnyGraphCanvas(group.graph));
       updateLayout(group, !!shouldPush);
     } else {
       state.collapsed = false;
@@ -1394,6 +1582,7 @@
         }
       }
       if (groupChanged) {
+        syncSmartGridGroupChildren(groups[g]);
         affected.push(groups[g]);
       }
     }
@@ -1586,7 +1775,9 @@
       var oldHeight = group.size[1];
       var oldBottom = group.pos[1] + oldHeight;
       if (isGroupCollapsed(group)) {
+        var collapsedWidth = computeCollapsedGroupWidth(group, getAnyGraphCanvas(group.graph));
         var collapsedHeight = COLLAPSED_GROUP_HEIGHT;
+        group.size[0] = collapsedWidth;
         group.size[1] = collapsedHeight;
         var collapsedDeltaY = collapsedHeight - oldHeight;
         if (shouldPush && collapsedDeltaY !== 0) {
@@ -1735,6 +1926,7 @@
         pushItemsBelow(group, deltaY, oldBottom);
       }
     } finally {
+      syncSmartGridGroupChildren(group);
       group.__smartGridPreserveHeightsOnNextLayout = false;
       group.__smartGridUpdatingLayout = false;
     }
@@ -2237,12 +2429,47 @@
       if (this.__smartGridState.collapsed) {
         this.size[1] = COLLAPSED_GROUP_HEIGHT;
       }
+      syncSmartGridGroupChildren(this);
       return;
     }
   };
 
+  if (
+    typeof originalGroupRecomputeInsideNodes === "function" &&
+    !window.LGraphGroup.prototype.__smartGridRecomputeInsideNodesPatched
+  ) {
+    window.LGraphGroup.prototype.recomputeInsideNodes = function () {
+      if (this && this.__isSmartGrid) {
+        syncSmartGridGroupChildren(this);
+        return this._nodes;
+      }
+      return originalGroupRecomputeInsideNodes.apply(this, arguments);
+    };
+    window.LGraphGroup.prototype.__smartGridRecomputeInsideNodesPatched = true;
+  }
+
   window.LGraphCanvas.prototype.drawGroups = function (canvas, ctx) {
-    originalDrawGroups.apply(this, arguments);
+    var swappedTitles = [];
+    if (this.graph && Array.isArray(this.graph._groups)) {
+      for (var i = 0; i < this.graph._groups.length; i += 1) {
+        var drawGroup = this.graph._groups[i];
+        if (!drawGroup || !drawGroup.__isSmartGrid || !isGroupCollapsed(drawGroup)) {
+          continue;
+        }
+        swappedTitles.push({
+          group: drawGroup,
+          title: drawGroup.title,
+        });
+        drawGroup.title = getCollapsedDisplayTitle(drawGroup);
+      }
+    }
+    try {
+      originalDrawGroups.apply(this, arguments);
+    } finally {
+      for (var s = 0; s < swappedTitles.length; s += 1) {
+        swappedTitles[s].group.title = swappedTitles[s].title;
+      }
+    }
     drawCollapsedProxyLinks(this, ctx);
     if (!this.graph || !Array.isArray(this.graph._groups)) {
       return;
@@ -2393,6 +2620,9 @@
     }
 
     var result = originalProcessMouseDown.apply(this, arguments);
+    if (isLeftButton && this.selected_group && this.selected_group.__isSmartGrid) {
+      syncSmartGridGroupChildren(this.selected_group);
+    }
     if (
       isLeftButton &&
       this.resizing_node &&
@@ -2408,6 +2638,16 @@
       this.selected_group &&
       this.selected_group.__isSmartGrid
     ) {
+      if (isGroupCollapsed(this.selected_group)) {
+        this.selected_group.size[0] = computeCollapsedGroupWidth(this.selected_group, this);
+        this.selected_group.size[1] = COLLAPSED_GROUP_HEIGHT;
+        this.selected_group_resizing = false;
+        this.selected_group.__smartGridResizeStartHeight = 0;
+        this.selected_group.__smartGridResizeStartBottomRowHeight = 0;
+        this.dirty_canvas = true;
+        this.dirty_bgcanvas = true;
+        return result;
+      }
       this.selected_group.__smartGridResizeStartHeight = this.selected_group.size
         ? this.selected_group.size[1]
         : 0;
@@ -2568,6 +2808,14 @@
     }
     // Keep SmartGrid children responsive while the group bounding box is resized.
     if (this.selected_group_resizing && this.selected_group && this.selected_group.__isSmartGrid) {
+      if (isGroupCollapsed(this.selected_group)) {
+        this.selected_group.size[0] = computeCollapsedGroupWidth(this.selected_group, this);
+        this.selected_group.size[1] = COLLAPSED_GROUP_HEIGHT;
+        this.selected_group_resizing = false;
+        this.dirty_canvas = true;
+        this.dirty_bgcanvas = true;
+        return result;
+      }
       var minResizeWidth = getGroupMinWidthPx(this.selected_group);
       var desiredHeight = isGroupCollapsed(this.selected_group)
         ? COLLAPSED_GROUP_HEIGHT
@@ -2717,6 +2965,13 @@
     var result = originalProcessMouseUp.apply(this, arguments);
 
     if (resizedGroup) {
+      if (isGroupCollapsed(resizedGroup)) {
+        resizedGroup.size[0] = computeCollapsedGroupWidth(resizedGroup, this);
+        resizedGroup.size[1] = COLLAPSED_GROUP_HEIGHT;
+        updateLayout(resizedGroup, false);
+        resizedGroup.__smartGridResizeStartHeight = 0;
+        resizedGroup.__smartGridResizeStartBottomRowHeight = 0;
+      } else {
       var minGroupWidth = getGroupMinWidthPx(resizedGroup);
       var minGroupHeight = isGroupCollapsed(resizedGroup)
         ? COLLAPSED_GROUP_HEIGHT
@@ -2728,6 +2983,7 @@
       updateLayout(resizedGroup, false);
       resizedGroup.__smartGridResizeStartHeight = 0;
       resizedGroup.__smartGridResizeStartBottomRowHeight = 0;
+      }
     }
 
     if (draggedNode) {
