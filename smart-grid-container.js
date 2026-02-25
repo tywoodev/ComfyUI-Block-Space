@@ -24,6 +24,7 @@
     rowTopPadding: 52,
     rowBottomPadding: 46,
     nodeVerticalGap: 40,
+    borderJunctionGap: 6,
     gridLineWidth: 2,
     gridLineAlpha: 0.32,
   };
@@ -32,6 +33,7 @@
     rowTopPadding: DEFAULT_GRID_SETTINGS.rowTopPadding,
     rowBottomPadding: DEFAULT_GRID_SETTINGS.rowBottomPadding,
     nodeVerticalGap: DEFAULT_GRID_SETTINGS.nodeVerticalGap,
+    borderJunctionGap: DEFAULT_GRID_SETTINGS.borderJunctionGap,
     gridLineWidth: DEFAULT_GRID_SETTINGS.gridLineWidth,
     gridLineAlpha: DEFAULT_GRID_SETTINGS.gridLineAlpha,
   };
@@ -40,6 +42,7 @@
   var ROW_NODE_TOP_PADDING = gridSettings.rowTopPadding;
   var ROW_NODE_BOTTOM_PADDING = gridSettings.rowBottomPadding;
   var NODE_VERTICAL_GAP = gridSettings.nodeVerticalGap;
+  var BORDER_JUNCTION_GAP = gridSettings.borderJunctionGap;
   var GRID_LINE_WIDTH = gridSettings.gridLineWidth;
   var GRID_LINE_ALPHA = gridSettings.gridLineAlpha;
 
@@ -94,6 +97,11 @@
       8,
       140
     );
+    gridSettings.borderJunctionGap = clampNumber(
+      toNumber(partial.borderJunctionGap, gridSettings.borderJunctionGap),
+      0,
+      30
+    );
     gridSettings.gridLineWidth = clampNumber(
       toNumber(partial.gridLineWidth, gridSettings.gridLineWidth),
       1,
@@ -110,6 +118,7 @@
     ROW_NODE_TOP_PADDING = Math.max(ROW_PADDING + 4, gridSettings.rowTopPadding);
     ROW_NODE_BOTTOM_PADDING = Math.max(ROW_PADDING + 2, gridSettings.rowBottomPadding);
     NODE_VERTICAL_GAP = gridSettings.nodeVerticalGap;
+    BORDER_JUNCTION_GAP = gridSettings.borderJunctionGap;
     GRID_LINE_WIDTH = gridSettings.gridLineWidth;
     GRID_LINE_ALPHA = gridSettings.gridLineAlpha;
     if (window.SmartGrid) {
@@ -395,8 +404,10 @@
 
   function getColumnHorizontalInsets(columnCount, colIndex) {
     var half = INNER_NODE_PADDING * 0.5;
-    var left = colIndex === 0 ? INNER_NODE_PADDING : half;
-    var right = colIndex === columnCount - 1 ? INNER_NODE_PADDING : half;
+    // Outer gutter is already provided by ROW_PADDING in getGroupInnerMetrics(),
+    // so keep edge insets at 0 to avoid doubling outside spacing.
+    var left = colIndex === 0 ? 0 : half;
+    var right = colIndex === columnCount - 1 ? 0 : half;
     return {
       left: left,
       right: right,
@@ -886,9 +897,16 @@
 
         if (c < row.columns.length - 1) {
           var splitX = col.x + col.width;
+          var gap = Math.max(0, BORDER_JUNCTION_GAP);
+          var startY = row.y + gap;
+          var endY = row.y + row.height - gap;
+          if (endY <= startY) {
+            startY = row.y;
+            endY = row.y + row.height;
+          }
           ctx.beginPath();
-          ctx.moveTo(splitX + 0.5, row.y);
-          ctx.lineTo(splitX + 0.5, row.y + row.height);
+          ctx.moveTo(splitX + 0.5, startY);
+          ctx.lineTo(splitX + 0.5, endY);
           ctx.stroke();
         }
       }
@@ -994,13 +1012,15 @@
     var topPaddingInput = document.getElementById("smartgrid-top-padding");
     var bottomPaddingInput = document.getElementById("smartgrid-bottom-padding");
     var nodeGapInput = document.getElementById("smartgrid-node-gap");
-    if (!rowPaddingInput || !topPaddingInput || !bottomPaddingInput || !nodeGapInput) {
+    var borderGapInput = document.getElementById("smartgrid-border-gap");
+    if (!rowPaddingInput || !topPaddingInput || !bottomPaddingInput || !nodeGapInput || !borderGapInput) {
       return false;
     }
     rowPaddingInput.value = String(Math.round(gridSettings.rowPadding));
     topPaddingInput.value = String(Math.round(gridSettings.rowTopPadding));
     bottomPaddingInput.value = String(Math.round(gridSettings.rowBottomPadding));
     nodeGapInput.value = String(Math.round(gridSettings.nodeVerticalGap));
+    borderGapInput.value = String(Math.round(gridSettings.borderJunctionGap));
     return true;
   }
 
@@ -1009,7 +1029,8 @@
     var topPaddingInput = document.getElementById("smartgrid-top-padding");
     var bottomPaddingInput = document.getElementById("smartgrid-bottom-padding");
     var nodeGapInput = document.getElementById("smartgrid-node-gap");
-    if (!rowPaddingInput || !topPaddingInput || !bottomPaddingInput || !nodeGapInput) {
+    var borderGapInput = document.getElementById("smartgrid-border-gap");
+    if (!rowPaddingInput || !topPaddingInput || !bottomPaddingInput || !nodeGapInput || !borderGapInput) {
       return false;
     }
 
@@ -1024,6 +1045,7 @@
         rowTopPadding: topPaddingInput.value,
         rowBottomPadding: bottomPaddingInput.value,
         nodeVerticalGap: nodeGapInput.value,
+        borderJunctionGap: borderGapInput.value,
       });
       var activeCanvas = window.LGraphCanvas.active_canvas;
       if (activeCanvas && activeCanvas.graph) {
@@ -1038,14 +1060,17 @@
     topPaddingInput.addEventListener("input", applyFromHud);
     bottomPaddingInput.addEventListener("input", applyFromHud);
     nodeGapInput.addEventListener("input", applyFromHud);
+    borderGapInput.addEventListener("input", applyFromHud);
     rowPaddingInput.addEventListener("change", applyFromHud);
     topPaddingInput.addEventListener("change", applyFromHud);
     bottomPaddingInput.addEventListener("change", applyFromHud);
     nodeGapInput.addEventListener("change", applyFromHud);
+    borderGapInput.addEventListener("change", applyFromHud);
     rowPaddingInput.__smartGridBound = true;
     topPaddingInput.__smartGridBound = true;
     bottomPaddingInput.__smartGridBound = true;
     nodeGapInput.__smartGridBound = true;
+    borderGapInput.__smartGridBound = true;
     syncHudWithGridSettings();
     return true;
   }
@@ -1528,6 +1553,7 @@
         rowTopPadding: gridSettings.rowTopPadding,
         rowBottomPadding: gridSettings.rowBottomPadding,
         nodeVerticalGap: gridSettings.nodeVerticalGap,
+        borderJunctionGap: gridSettings.borderJunctionGap,
         gridLineWidth: gridSettings.gridLineWidth,
         gridLineAlpha: gridSettings.gridLineAlpha,
       };
