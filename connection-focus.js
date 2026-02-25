@@ -157,6 +157,24 @@
     });
   }
 
+  function ensureFocusVersionStamp() {
+    var hud = document.querySelector(".hud");
+    if (!hud) {
+      return;
+    }
+    if (hud.querySelector(".focus-version-stamp")) {
+      return;
+    }
+
+    var stamp = document.createElement("div");
+    stamp.className = "focus-version-stamp";
+    stamp.textContent = "Connection focus: v2";
+    stamp.style.marginTop = "6px";
+    stamp.style.fontSize = "11px";
+    stamp.style.opacity = "0.75";
+    hud.appendChild(stamp);
+  }
+
   function isLeftPointer(event) {
     if (!event) {
       return false;
@@ -464,9 +482,13 @@
   );
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", setupDebugColorPicker);
+    document.addEventListener("DOMContentLoaded", function () {
+      setupDebugColorPicker();
+      ensureFocusVersionStamp();
+    });
   } else {
     setupDebugColorPicker();
+    ensureFocusVersionStamp();
   }
 
   window.__connectionFocusState = focusState;
