@@ -27,6 +27,7 @@
     borderJunctionGap: 6,
     gridLineWidth: 2,
     gridLineColor: "#ffffff",
+    gridLineStyle: "solid",
     gridLineAlpha: 0.32,
   };
   var gridSettings = {
@@ -37,6 +38,7 @@
     borderJunctionGap: DEFAULT_GRID_SETTINGS.borderJunctionGap,
     gridLineWidth: DEFAULT_GRID_SETTINGS.gridLineWidth,
     gridLineColor: DEFAULT_GRID_SETTINGS.gridLineColor,
+    gridLineStyle: DEFAULT_GRID_SETTINGS.gridLineStyle,
     gridLineAlpha: DEFAULT_GRID_SETTINGS.gridLineAlpha,
   };
   var ROW_PADDING = gridSettings.rowPadding;
@@ -47,7 +49,11 @@
   var BORDER_JUNCTION_GAP = gridSettings.borderJunctionGap;
   var GRID_LINE_WIDTH = gridSettings.gridLineWidth;
   var GRID_LINE_COLOR = gridSettings.gridLineColor;
+  var GRID_LINE_STYLE = gridSettings.gridLineStyle;
   var GRID_LINE_ALPHA = gridSettings.gridLineAlpha;
+  var AUTOFIT_BUTTON_WIDTH = 64;
+  var AUTOFIT_BUTTON_HEIGHT = 18;
+  var AUTOFIT_BUTTON_MARGIN = 8;
 
   var originalOnGroupAdd = window.LGraphCanvas.onGroupAdd;
   var originalGroupSerialize = window.LGraphGroup.prototype.serialize;
@@ -76,6 +82,13 @@
 
   function clampNumber(value, min, max) {
     return Math.max(min, Math.min(max, value));
+  }
+
+  function normalizeGridLineStyle(style, fallback) {
+    if (style === "solid" || style === "dashed" || style === "dotted" || style === "double") {
+      return style;
+    }
+    return fallback;
   }
 
   function normalizeHexColor(value, fallback) {
@@ -152,6 +165,10 @@
       partial.gridLineColor,
       gridSettings.gridLineColor
     );
+    gridSettings.gridLineStyle = normalizeGridLineStyle(
+      partial.gridLineStyle,
+      gridSettings.gridLineStyle
+    );
     gridSettings.gridLineAlpha = clampNumber(
       toNumber(partial.gridLineAlpha, gridSettings.gridLineAlpha),
       0.1,
@@ -160,12 +177,14 @@
 
     ROW_PADDING = gridSettings.rowPadding;
     INNER_NODE_PADDING = ROW_PADDING;
-    ROW_NODE_TOP_PADDING = Math.max(ROW_PADDING + 4, gridSettings.rowTopPadding);
-    ROW_NODE_BOTTOM_PADDING = Math.max(ROW_PADDING + 2, gridSettings.rowBottomPadding);
+    // Keep top/bottom row padding directly user-configurable from HUD controls.
+    ROW_NODE_TOP_PADDING = gridSettings.rowTopPadding;
+    ROW_NODE_BOTTOM_PADDING = gridSettings.rowBottomPadding;
     NODE_VERTICAL_GAP = gridSettings.nodeVerticalGap;
     BORDER_JUNCTION_GAP = gridSettings.borderJunctionGap;
     GRID_LINE_WIDTH = gridSettings.gridLineWidth;
     GRID_LINE_COLOR = gridSettings.gridLineColor;
+    GRID_LINE_STYLE = gridSettings.gridLineStyle;
     GRID_LINE_ALPHA = gridSettings.gridLineAlpha;
     if (window.SmartGrid) {
       window.SmartGrid.ROW_PADDING = ROW_PADDING;
@@ -540,6 +559,66 @@
     return null;
   }
 
+  function getAutofitButtonRect(group) {
+    if (!group || !group.pos || !group.size) {
+      return null;
+    }
+    var width = Math.min(AUTOFIT_BUTTON_WIDTH, Math.max(48, Math.floor(group.size[0] * 0.4)));
+    var x = group.pos[0] + group.size[0] - AUTOFIT_BUTTON_MARGIN - width;
+    var y = group.pos[1] + AUTOFIT_BUTTON_MARGIN;
+    return {
+      x: x,
+      y: y,
+      width: width,
+      height: AUTOFIT_BUTTON_HEIGHT,
+    };
+  }
+
+  function pointInRect(x, y, rect) {
+    return (
+      !!rect &&
+      x >= rect.x &&
+      x <= rect.x + rect.width &&
+      y >= rect.y &&
+      y <= rect.y + rect.height
+    );
+  }
+
+  function findAutofitButtonHit(canvas, canvasX, canvasY) {
+    if (!canvas || !canvas.graph) {
+      return null;
+    }
+    var groups = getSmartGroups(canvas.graph);
+    for (var g = groups.length - 1; g >= 0; g -= 1) {
+      var group = groups[g];
+      if (!group.isPointInside(canvasX, canvasY, 0, true)) {
+        continue;
+      }
+      var rect = getAutofitButtonRect(group);
+      if (pointInRect(canvasX, canvasY, rect)) {
+        return {
+          group: group,
+          rect: rect,
+        };
+      }
+    }
+    return null;
+  }
+
+  function autofitSmartGridRows(group) {
+    if (!group || !group.__isSmartGrid) {
+      return;
+    }
+    var state = ensureGroupState(group);
+    for (var r = 0; r < state.rows.length; r += 1) {
+      var nextHeight = getRowRequiredHeightPx(group, r);
+      state.rows[r].__manualHeightPx = nextHeight;
+      state.rows[r].heightPx = nextHeight;
+    }
+    updateLayout(group, false);
+    group.setDirtyCanvas(true, true);
+  }
+
   function getColumnHorizontalInsets(columnCount, colIndex) {
     var half = INNER_NODE_PADDING * 0.5;
     // Outer gutter is already provided by ROW_PADDING in getGroupInnerMetrics(),
@@ -814,16 +893,10 @@
     // Managed widths are column-driven; single-node columns also have row-driven heights.
     var boundedMinWidth = Math.max(minWidth, columnWidth);
     var boundedMaxWidth = boundedMinWidth;
-    // For single-node rows, allow shrinking back down to intrinsic min height.
+    // Keep intrinsic minimum height so docked nodes can both grow and shrink.
     var boundedMinHeight = minHeight;
-    if (singleNodeColumn && !singleNodeRow) {
-      boundedMinHeight = Math.max(minHeight, rowHeight);
-    }
-    // If this row has exactly one node, allow vertical resizing to drive row height.
+    // Allow vertical resizing for managed nodes; row growth is reconciled on mouse-up.
     var boundedMaxHeight = Number.POSITIVE_INFINITY;
-    if (!singleNodeRow && singleNodeColumn) {
-      boundedMaxHeight = boundedMinHeight;
-    }
 
     return {
       minWidth: boundedMinWidth,
@@ -1038,6 +1111,26 @@
           this.size[1] = clamped[1];
         }
         this.__smartGridManualSize = [clamped[0], clamped[1]];
+
+        if (this.graph && this.id != null) {
+          var managedGroup = findManagingGroupForNode(this.graph, this.id);
+          if (managedGroup) {
+            var location = findManagedNodeLocation(managedGroup, this.id);
+            if (location) {
+              var managedState = ensureGroupState(managedGroup);
+              var managedRow = managedState.rows[location.rowIndex];
+              if (managedRow) {
+                var requiredRowHeight = getRowRequiredHeightPx(managedGroup, location.rowIndex);
+                var currentRowHeight = Math.max(MIN_ROW_HEIGHT, Number(managedRow.heightPx) || MIN_ROW_HEIGHT);
+                if (requiredRowHeight > currentRowHeight) {
+                  managedRow.__manualHeightPx = requiredRowHeight;
+                  managedRow.heightPx = requiredRowHeight;
+                }
+              }
+            }
+            queueGroupRelayout(managedGroup, false);
+          }
+        }
       }
       if (originalOnResize) {
         return originalOnResize.apply(this, arguments);
@@ -1186,6 +1279,9 @@
         if (isFinite(Number(rowState.__manualHeightPx))) {
           baseHeight = Math.max(baseHeight, Number(rowState.__manualHeightPx));
         }
+        // Always enforce content-fit minimum so padding/gap updates reflect immediately.
+        var requiredHeight = getRowRequiredHeightPx(group, rowIndex);
+        baseHeight = Math.max(baseHeight, requiredHeight);
         if (preserveRowHeights) {
           baseHeight = Math.max(MIN_ROW_HEIGHT, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
         }
@@ -1291,14 +1387,52 @@
     ctx.save();
     ctx.strokeStyle = buildRgba(GRID_LINE_COLOR, GRID_LINE_ALPHA);
     ctx.lineWidth = GRID_LINE_WIDTH;
+    if (GRID_LINE_STYLE === "dashed") {
+      ctx.setLineDash([10, 6]);
+    } else if (GRID_LINE_STYLE === "dotted") {
+      ctx.setLineDash([2, 6]);
+    } else {
+      ctx.setLineDash([]);
+    }
+
+    function strokeHorizontalLine(x1, y, x2) {
+      if (GRID_LINE_STYLE !== "double") {
+        ctx.beginPath();
+        ctx.moveTo(x1, y + 0.5);
+        ctx.lineTo(x2, y + 0.5);
+        ctx.stroke();
+        return;
+      }
+      var offset = Math.max(1.5, GRID_LINE_WIDTH);
+      ctx.beginPath();
+      ctx.moveTo(x1, y - offset);
+      ctx.lineTo(x2, y - offset);
+      ctx.moveTo(x1, y + offset);
+      ctx.lineTo(x2, y + offset);
+      ctx.stroke();
+    }
+
+    function strokeVerticalLine(x, y1, y2) {
+      if (GRID_LINE_STYLE !== "double") {
+        ctx.beginPath();
+        ctx.moveTo(x + 0.5, y1);
+        ctx.lineTo(x + 0.5, y2);
+        ctx.stroke();
+        return;
+      }
+      var offset = Math.max(1.5, GRID_LINE_WIDTH);
+      ctx.beginPath();
+      ctx.moveTo(x - offset, y1);
+      ctx.lineTo(x - offset, y2);
+      ctx.moveTo(x + offset, y1);
+      ctx.lineTo(x + offset, y2);
+      ctx.stroke();
+    }
 
     for (var r = 0; r < geometry.rows.length; r += 1) {
       var row = geometry.rows[r];
       if (r > 0) {
-        ctx.beginPath();
-        ctx.moveTo(row.x, row.y + 0.5);
-        ctx.lineTo(row.x + row.width, row.y + 0.5);
-        ctx.stroke();
+        strokeHorizontalLine(row.x, row.y, row.x + row.width);
       }
 
       for (var c = 0; c < row.columns.length; c += 1) {
@@ -1333,12 +1467,33 @@
             startY = row.y;
             endY = row.y + row.height;
           }
-          ctx.beginPath();
-          ctx.moveTo(splitX + 0.5, startY);
-          ctx.lineTo(splitX + 0.5, endY);
-          ctx.stroke();
+          strokeVerticalLine(splitX, startY, endY);
         }
       }
+    }
+
+    var autofitRect = getAutofitButtonRect(group);
+    if (autofitRect) {
+      var autofitHover = !!(
+        canvas &&
+        canvas.__smartGridAutofitHover &&
+        canvas.__smartGridAutofitHover.group === group
+      );
+      ctx.save();
+      ctx.fillStyle = autofitHover ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.14)";
+      ctx.strokeStyle = "rgba(255,255,255,0.45)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.rect(autofitRect.x, autofitRect.y, autofitRect.width, autofitRect.height);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.font = "11px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Autofit", autofitRect.x + autofitRect.width * 0.5, autofitRect.y + autofitRect.height * 0.5);
+      ctx.restore();
     }
 
     ctx.restore();
@@ -1447,6 +1602,7 @@
     var borderGapInput = document.getElementById("smartgrid-border-gap");
     var dividerWidthInput = document.getElementById("smartgrid-divider-width");
     var dividerColorInput = document.getElementById("smartgrid-divider-color");
+    var dividerStyleInput = document.getElementById("smartgrid-divider-style");
     if (
       !rowPaddingInput ||
       !topPaddingInput ||
@@ -1454,7 +1610,8 @@
       !nodeGapInput ||
       !borderGapInput ||
       !dividerWidthInput ||
-      !dividerColorInput
+      !dividerColorInput ||
+      !dividerStyleInput
     ) {
       return false;
     }
@@ -1465,6 +1622,7 @@
     borderGapInput.value = String(Math.round(gridSettings.borderJunctionGap));
     dividerWidthInput.value = String(Math.round(gridSettings.gridLineWidth));
     dividerColorInput.value = normalizeHexColor(gridSettings.gridLineColor, "#ffffff");
+    dividerStyleInput.value = normalizeGridLineStyle(gridSettings.gridLineStyle, "solid");
     return true;
   }
 
@@ -1476,6 +1634,7 @@
     var borderGapInput = document.getElementById("smartgrid-border-gap");
     var dividerWidthInput = document.getElementById("smartgrid-divider-width");
     var dividerColorInput = document.getElementById("smartgrid-divider-color");
+    var dividerStyleInput = document.getElementById("smartgrid-divider-style");
     if (
       !rowPaddingInput ||
       !topPaddingInput ||
@@ -1483,7 +1642,8 @@
       !nodeGapInput ||
       !borderGapInput ||
       !dividerWidthInput ||
-      !dividerColorInput
+      !dividerColorInput ||
+      !dividerStyleInput
     ) {
       return false;
     }
@@ -1502,6 +1662,7 @@
         borderJunctionGap: borderGapInput.value,
         gridLineWidth: dividerWidthInput.value,
         gridLineColor: dividerColorInput.value,
+        gridLineStyle: dividerStyleInput.value,
       });
       var activeCanvas = window.LGraphCanvas.active_canvas;
       if (activeCanvas && activeCanvas.graph) {
@@ -1519,6 +1680,7 @@
     borderGapInput.addEventListener("input", applyFromHud);
     dividerWidthInput.addEventListener("input", applyFromHud);
     dividerColorInput.addEventListener("input", applyFromHud);
+    dividerStyleInput.addEventListener("input", applyFromHud);
     rowPaddingInput.addEventListener("change", applyFromHud);
     topPaddingInput.addEventListener("change", applyFromHud);
     bottomPaddingInput.addEventListener("change", applyFromHud);
@@ -1526,6 +1688,7 @@
     borderGapInput.addEventListener("change", applyFromHud);
     dividerWidthInput.addEventListener("change", applyFromHud);
     dividerColorInput.addEventListener("change", applyFromHud);
+    dividerStyleInput.addEventListener("change", applyFromHud);
     rowPaddingInput.__smartGridBound = true;
     topPaddingInput.__smartGridBound = true;
     bottomPaddingInput.__smartGridBound = true;
@@ -1533,6 +1696,7 @@
     borderGapInput.__smartGridBound = true;
     dividerWidthInput.__smartGridBound = true;
     dividerColorInput.__smartGridBound = true;
+    dividerStyleInput.__smartGridBound = true;
     syncHudWithGridSettings();
     return true;
   }
@@ -1719,6 +1883,14 @@
       clickedNode = this.graph.getNodeOnPos(event.canvasX, event.canvasY, this.visible_nodes);
     }
     if (isLeftButton) {
+      var autofitHit = findAutofitButtonHit(this, event.canvasX, event.canvasY);
+      if (autofitHit && autofitHit.group) {
+        autofitSmartGridRows(autofitHit.group);
+        this.__smartGridAutofitHover = null;
+        this.dirty_canvas = true;
+        this.dirty_bgcanvas = true;
+        return true;
+      }
       var rowHit = findRowDividerHit(this, event.canvasX, event.canvasY);
       if (rowHit) {
         this.__smartGridRowDividerDrag = {
@@ -1951,18 +2123,29 @@
     var isBusyDragging =
       !!this.node_dragged || !!this.resizing_node || !!this.dragging_canvas || !!this.dragging_rectangle;
     if (!isBusyDragging && event && typeof event.canvasX === "number" && typeof event.canvasY === "number") {
+      var autofitHoverHit = findAutofitButtonHit(this, event.canvasX, event.canvasY);
       var rowDividerHoverHit = findRowDividerHit(this, event.canvasX, event.canvasY);
       var splitterHoverHit = findSplitterHit(this, event.canvasX, event.canvasY);
-      if (rowDividerHoverHit && this.canvas && this.canvas.style) {
+      if (autofitHoverHit && this.canvas && this.canvas.style) {
+        this.__smartGridAutofitHover = autofitHoverHit;
+        this.canvas.style.cursor = "pointer";
+      } else if (rowDividerHoverHit && this.canvas && this.canvas.style) {
+        this.__smartGridAutofitHover = null;
         this.canvas.style.cursor = "row-resize";
       } else if (splitterHoverHit && this.canvas && this.canvas.style) {
+        this.__smartGridAutofitHover = null;
         this.canvas.style.cursor = "col-resize";
       } else if (
         this.canvas &&
         this.canvas.style &&
-        (this.canvas.style.cursor === "col-resize" || this.canvas.style.cursor === "row-resize")
+        (this.canvas.style.cursor === "col-resize" ||
+          this.canvas.style.cursor === "row-resize" ||
+          this.canvas.style.cursor === "pointer")
       ) {
+        this.__smartGridAutofitHover = null;
         this.canvas.style.cursor = "";
+      } else {
+        this.__smartGridAutofitHover = null;
       }
     }
 
@@ -2207,6 +2390,7 @@
         borderJunctionGap: gridSettings.borderJunctionGap,
         gridLineWidth: gridSettings.gridLineWidth,
         gridLineColor: gridSettings.gridLineColor,
+        gridLineStyle: gridSettings.gridLineStyle,
         gridLineAlpha: gridSettings.gridLineAlpha,
       };
     },
