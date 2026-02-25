@@ -400,10 +400,15 @@
 
       var result;
       if (shouldDimNode) {
-        ctx.save();
-        ctx.globalAlpha = ctx.globalAlpha * 0.28;
-        result = originalDrawNode.apply(this, arguments);
-        ctx.restore();
+        var previousEditorAlpha = this.editor_alpha;
+        var safeEditorAlpha = typeof previousEditorAlpha === "number" ? previousEditorAlpha : 1;
+        // Use node-level alpha so the node body is actually transparent, not just darkened.
+        this.editor_alpha = safeEditorAlpha * 0.28;
+        try {
+          result = originalDrawNode.apply(this, arguments);
+        } finally {
+          this.editor_alpha = previousEditorAlpha;
+        }
         return result;
       }
 
