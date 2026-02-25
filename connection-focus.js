@@ -33,6 +33,7 @@
   };
   var defaultSettings = {
     pulseColor: "#ff00ae",
+    connectorStubLength: 34,
   };
 
   function getFocusSettings() {
@@ -43,6 +44,10 @@
     if (typeof settings.pulseColor !== "string" || !settings.pulseColor.trim()) {
       settings.pulseColor = defaultSettings.pulseColor;
     }
+    if (typeof settings.connectorStubLength !== "number" || !isFinite(settings.connectorStubLength)) {
+      settings.connectorStubLength = defaultSettings.connectorStubLength;
+    }
+    settings.connectorStubLength = Math.max(10, Math.min(80, settings.connectorStubLength));
     return settings;
   }
 
@@ -134,10 +139,14 @@
       if (typeof partialSettings.pulseColor === "string" && partialSettings.pulseColor.trim()) {
         settings.pulseColor = partialSettings.pulseColor.trim();
       }
+      if (typeof partialSettings.connectorStubLength === "number" && isFinite(partialSettings.connectorStubLength)) {
+        settings.connectorStubLength = Math.max(10, Math.min(80, partialSettings.connectorStubLength));
+      }
     }
     markCanvasDirty(focusState.activeCanvas);
     return {
       pulseColor: settings.pulseColor,
+      connectorStubLength: settings.connectorStubLength,
     };
   };
 
@@ -155,6 +164,24 @@
         pulseColor: input.value,
       });
     });
+  }
+
+  function ensureFocusVersionStamp() {
+    var hud = document.querySelector(".hud");
+    if (!hud) {
+      return;
+    }
+    if (hud.querySelector(".focus-version-stamp")) {
+      return;
+    }
+
+    var stamp = document.createElement("div");
+    stamp.className = "focus-version-stamp";
+    stamp.textContent = "Connection focus: v2";
+    stamp.style.marginTop = "6px";
+    stamp.style.fontSize = "11px";
+    stamp.style.opacity = "0.75";
+    hud.appendChild(stamp);
   }
 
   function isLeftPointer(event) {
@@ -207,40 +234,56 @@
       return null;
     }
 
-    var targetNodeIds = {};
+    var connectedNodeIds = {};
+    var connectedLinkIds = {};
     var targetInputsByNode = {};
+    var sourceOutputSlotsByNode = {};
     var activeOutputSlots = {};
+    var activeInputSlots = {};
 
-    if (Array.isArray(activeNode.outputs) && graph.links) {
-      for (var outIndex = 0; outIndex < activeNode.outputs.length; outIndex += 1) {
-        var output = activeNode.outputs[outIndex];
-        if (!output || !Array.isArray(output.links) || output.links.length === 0) {
+    if (graph.links) {
+      for (var linkId in graph.links) {
+        if (!Object.prototype.hasOwnProperty.call(graph.links, linkId)) {
           continue;
         }
+        var link = graph.links[linkId];
+        if (!link) {
+          continue;
+        }
+        var linkKey = link.id != null ? link.id : linkId;
 
-        for (var i = 0; i < output.links.length; i += 1) {
-          var linkId = output.links[i];
-          var link = graph.links[linkId];
-          if (!link || link.origin_id !== activeNode.id) {
-            continue;
-          }
-
-          activeOutputSlots[outIndex] = true;
-          targetNodeIds[link.target_id] = true;
+        if (link.origin_id === activeNode.id) {
+          connectedNodeIds[link.target_id] = true;
+          connectedLinkIds[linkKey] = true;
+          activeOutputSlots[link.origin_slot] = true;
 
           if (!targetInputsByNode[link.target_id]) {
             targetInputsByNode[link.target_id] = {};
           }
           targetInputsByNode[link.target_id][link.target_slot] = true;
         }
+
+        if (link.target_id === activeNode.id) {
+          connectedNodeIds[link.origin_id] = true;
+          connectedLinkIds[linkKey] = true;
+          activeInputSlots[link.target_slot] = true;
+
+          if (!sourceOutputSlotsByNode[link.origin_id]) {
+            sourceOutputSlotsByNode[link.origin_id] = {};
+          }
+          sourceOutputSlotsByNode[link.origin_id][link.origin_slot] = true;
+        }
       }
     }
 
     return {
       activeNodeId: activeNode.id,
-      targetNodeIds: targetNodeIds,
+      connectedNodeIds: connectedNodeIds,
+      connectedLinkIds: connectedLinkIds,
       targetInputsByNode: targetInputsByNode,
+      sourceOutputSlotsByNode: sourceOutputSlotsByNode,
       activeOutputSlots: activeOutputSlots,
+      activeInputSlots: activeInputSlots,
       animationTime: focusState.animationTime,
     };
   }
@@ -265,14 +308,11 @@
     var ay = a[1];
     var bx = b[0];
     var by = b[1];
-    var dx = bx - ax;
-    var absDx = Math.abs(dx);
-
     var settings = getFocusSettings();
     var pulseColor = settings.pulseColor;
     var dashOffset = -((animationTime || 0) * 0.028);
     var prevLineWidth = ctx.lineWidth || 1;
-    var dist = Math.max(20, Math.min(100, absDx * 0.5));
+    var stub = settings.connectorStubLength;
 
     ctx.save();
     ctx.globalAlpha = Math.min(1, ctx.globalAlpha * 0.95);
@@ -283,10 +323,7 @@
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    // Draw an explicit spline overlay so configured color is always respected.
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.bezierCurveTo(ax + dist, ay, bx - dist, by, bx, by);
+    drawHardAnglePath(ctx, ax, ay, bx, by, stub);
     ctx.stroke();
     ctx.restore();
   }
@@ -320,10 +357,60 @@
     ctx.restore();
   }
 
+  function drawHardAngleLink(argsLike) {
+    if (!argsLike || !argsLike.length) {
+      return;
+    }
+    var ctx = argsLike[0];
+    if (!ctx) {
+      return;
+    }
+    var a = argsLike[1];
+    var b = argsLike[2];
+    if (!a || !b || a.length < 2 || b.length < 2) {
+      return;
+    }
+
+    var ax = a[0];
+    var ay = a[1];
+    var bx = b[0];
+    var by = b[1];
+    var settings = getFocusSettings();
+    var stub = settings.connectorStubLength;
+
+    ctx.save();
+    ctx.lineJoin = "miter";
+    ctx.lineCap = "round";
+    drawHardAnglePath(ctx, ax, ay, bx, by, stub);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawHardAnglePath(ctx, ax, ay, bx, by, stub) {
+    // Keep endpoint stubs fixed relative to sockets for predictable tracing.
+    var startX = ax + stub;
+    var endX = bx - stub;
+    var needsDetour = endX <= startX + 8;
+    var laneX = Math.max(startX, endX) + stub;
+
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(startX, ay);
+    if (needsDetour) {
+      // When nodes cross, route through a fixed outer lane so links stay visible.
+      ctx.lineTo(laneX, ay);
+      ctx.lineTo(laneX, by);
+      ctx.lineTo(endX, by);
+    } else {
+      ctx.lineTo(endX, by);
+    }
+    ctx.lineTo(bx, by);
+  }
+
   window.LGraphCanvas.prototype.renderLink = function (ctx, a, b) {
     var focus = getActiveFocus(this);
     if (!focus) {
-      return originalRenderLink.apply(this, arguments);
+      return drawHardAngleLink(arguments);
     }
 
     var link = extractLinkInfo(arguments);
@@ -331,17 +418,25 @@
       return originalRenderLink.apply(this, arguments);
     }
 
-    var isOutgoing = link.origin_id === focus.activeNodeId;
-    if (!isOutgoing) {
+    var linkKey = link.id != null ? link.id : null;
+    var isConnected = false;
+    if (linkKey != null && focus.connectedLinkIds[linkKey]) {
+      isConnected = true;
+    } else if (focus.connectedLinkIds[String(linkKey)]) {
+      isConnected = true;
+    }
+    if (!isConnected) {
       ctx.save();
       ctx.globalAlpha = ctx.globalAlpha * 0.12;
-      var dimResult = originalRenderLink.apply(this, arguments);
+      var dimResult = drawHardAngleLink(arguments);
       ctx.restore();
       return dimResult;
     }
 
-    var result = originalRenderLink.apply(this, arguments);
-    drawFlowOverlay(this, arguments, focus.animationTime || 0);
+    var result = drawHardAngleLink(arguments);
+    if (link.origin_id === focus.activeNodeId || link.target_id === focus.activeNodeId) {
+      drawFlowOverlay(this, arguments, focus.animationTime || 0);
+    }
     return result;
   };
 
@@ -353,15 +448,20 @@
       }
 
       var isActiveNode = node.id === focus.activeNodeId;
-      var isTargetNode = !!focus.targetNodeIds[node.id];
-      var shouldDimNode = !isActiveNode && !isTargetNode;
+      var isConnectedNode = isActiveNode || !!focus.connectedNodeIds[node.id];
+      var shouldDimNode = !isConnectedNode;
 
       var result;
       if (shouldDimNode) {
-        ctx.save();
-        ctx.globalAlpha = ctx.globalAlpha * 0.28;
-        result = originalDrawNode.apply(this, arguments);
-        ctx.restore();
+        var previousEditorAlpha = this.editor_alpha;
+        var safeEditorAlpha = typeof previousEditorAlpha === "number" ? previousEditorAlpha : 1;
+        // Use node-level alpha so the node body is actually transparent, not just darkened.
+        this.editor_alpha = safeEditorAlpha * 0.28;
+        try {
+          result = originalDrawNode.apply(this, arguments);
+        } finally {
+          this.editor_alpha = previousEditorAlpha;
+        }
         return result;
       }
 
@@ -374,12 +474,24 @@
         for (var i = 0; i < outputIndices.length; i += 1) {
           drawSlotRing(node, ctx, false, Number(outputIndices[i]), pulseColor);
         }
-      }
 
-      if (isTargetNode && focus.targetInputsByNode[node.id]) {
-        var inputIndices = Object.keys(focus.targetInputsByNode[node.id]);
+        var inputIndices = Object.keys(focus.activeInputSlots);
         for (var j = 0; j < inputIndices.length; j += 1) {
           drawSlotRing(node, ctx, true, Number(inputIndices[j]), pulseColor);
+        }
+      }
+
+      if (focus.targetInputsByNode[node.id]) {
+        var targetInputIndices = Object.keys(focus.targetInputsByNode[node.id]);
+        for (var k = 0; k < targetInputIndices.length; k += 1) {
+          drawSlotRing(node, ctx, true, Number(targetInputIndices[k]), pulseColor);
+        }
+      }
+
+      if (focus.sourceOutputSlotsByNode[node.id]) {
+        var sourceOutputIndices = Object.keys(focus.sourceOutputSlotsByNode[node.id]);
+        for (var l = 0; l < sourceOutputIndices.length; l += 1) {
+          drawSlotRing(node, ctx, false, Number(sourceOutputIndices[l]), pulseColor);
         }
       }
 
@@ -437,9 +549,13 @@
   );
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", setupDebugColorPicker);
+    document.addEventListener("DOMContentLoaded", function () {
+      setupDebugColorPicker();
+      ensureFocusVersionStamp();
+    });
   } else {
     setupDebugColorPicker();
+    ensureFocusVersionStamp();
   }
 
   window.__connectionFocusState = focusState;
