@@ -55,6 +55,9 @@
   var originalProcessMouseDown = window.LGraphCanvas.prototype.processMouseDown;
   var originalProcessMouseMove = window.LGraphCanvas.prototype.processMouseMove;
   var originalProcessMouseUp = window.LGraphCanvas.prototype.processMouseUp;
+  var originalGraphRemove = window.LGraph && window.LGraph.prototype
+    ? window.LGraph.prototype.remove
+    : null;
   var originalNodeSetSize = window.LGraphNode && window.LGraphNode.prototype
     ? window.LGraphNode.prototype.setSize
     : null;
@@ -203,7 +206,7 @@
     }
     if (!group.__smartGridState || !Array.isArray(group.__smartGridState.rows)) {
       group.__smartGridState = {
-        rows: [createRowFromPreset([100])],
+        rows: [createRowFromPreset([50, 50])],
       };
     }
     if (!group.__isSmartGrid) {
@@ -449,6 +452,37 @@
     return Math.max(20, maxWidth + insets.total);
   }
 
+  function getRowRequiredHeightPx(group, rowIndex) {
+    var state = ensureGroupState(group);
+    var row = state.rows[rowIndex];
+    if (!row || !Array.isArray(row.columns)) {
+      return MIN_ROW_HEIGHT;
+    }
+    var rowContentHeight = Math.max(24, MIN_ROW_HEIGHT - ROW_NODE_TOP_PADDING - ROW_NODE_BOTTOM_PADDING);
+    for (var c = 0; c < row.columns.length; c += 1) {
+      var ids = row.columns[c].childNodeIds || [];
+      for (var i = 0; i < ids.length; i += 1) {
+        var node = getNodeById(group.graph, ids[i]);
+        if (!node) {
+          continue;
+        }
+        var minSize = getNodeIntrinsicMinSize(node);
+        var minHeight = Math.max(0, Number(minSize[1]) || 0);
+        var manualHeight = node.__smartGridManualSize && node.__smartGridManualSize.length >= 2
+          ? Math.max(0, Number(node.__smartGridManualSize[1]) || 0)
+          : 0;
+        var requiredHeight = Math.max(minHeight, manualHeight);
+        if (requiredHeight > rowContentHeight) {
+          rowContentHeight = requiredHeight;
+        }
+      }
+    }
+    return Math.max(
+      MIN_ROW_HEIGHT,
+      rowContentHeight + ROW_NODE_TOP_PADDING + ROW_NODE_BOTTOM_PADDING
+    );
+  }
+
   function getGroupMinWidthPx(group) {
     var state = ensureGroupState(group);
     if (!state || !Array.isArray(state.rows) || !state.rows.length) {
@@ -473,6 +507,14 @@
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
+  }
+
+  function getSafeNodeAxis(value, fallback) {
+    var numeric = Number(value);
+    if (!isFinite(numeric)) {
+      return fallback;
+    }
+    return numeric;
   }
 
   function roundToSnapPercent(value) {
@@ -576,6 +618,122 @@
     return null;
   }
 
+  function findRowDividerHit(canvas, canvasX, canvasY) {
+    if (!canvas || !canvas.graph) {
+      return null;
+    }
+    var groups = getSmartGroups(canvas.graph);
+    for (var g = groups.length - 1; g >= 0; g -= 1) {
+      var group = groups[g];
+      if (!group.isPointInside(canvasX, canvasY, 0, true)) {
+        continue;
+      }
+      var geometry = getGridGeometry(group);
+      var rows = geometry.rows;
+      for (var r = 0; r < rows.length - 1; r += 1) {
+        var row = rows[r];
+        var splitY = row.y + row.height;
+        if (canvasX < row.x || canvasX > row.x + row.width) {
+          continue;
+        }
+        if (Math.abs(canvasY - splitY) <= SPLITTER_HITBOX) {
+          return {
+            group: group,
+            upperIndex: r,
+            lowerIndex: r + 1,
+            splitY: splitY,
+          };
+        }
+      }
+    }
+    return null;
+  }
+
+  function findManagedNodeLocation(group, nodeId) {
+    if (!group || !group.graph || nodeId == null) {
+      return null;
+    }
+    var state = ensureGroupState(group);
+    for (var r = 0; r < state.rows.length; r += 1) {
+      var row = state.rows[r];
+      for (var c = 0; c < row.columns.length; c += 1) {
+        var ids = row.columns[c].childNodeIds || [];
+        if (ids.indexOf(nodeId) !== -1) {
+          return {
+            rowIndex: r,
+            colIndex: c,
+            row: row,
+            column: row.columns[c],
+          };
+        }
+      }
+    }
+    return null;
+  }
+
+  function getManagedNodeResizeBounds(node) {
+    if (!node || !node.graph || node.id == null) {
+      return null;
+    }
+    var group = findManagingGroupForNode(node.graph, node.id);
+    if (!group) {
+      return null;
+    }
+    var location = findManagedNodeLocation(group, node.id);
+    if (!location) {
+      return null;
+    }
+    var geometry = getGridGeometry(group);
+    var rowRect = geometry.rows[location.rowIndex];
+    if (!rowRect || !rowRect.columns || !rowRect.columns[location.colIndex]) {
+      return null;
+    }
+    var colRect = rowRect.columns[location.colIndex];
+    var insets = getColumnHorizontalInsets(rowRect.columns.length, location.colIndex);
+    var minSize = getNodeIntrinsicMinSize(node);
+    var minWidth = Math.max(0, Number(minSize[0]) || 0);
+    var minHeight = Math.max(0, Number(minSize[1]) || 0);
+    var columnWidth = Math.max(40, Math.round(colRect.width - insets.total));
+    var rowHeight = Math.max(24, Math.round(rowRect.height - ROW_NODE_TOP_PADDING - ROW_NODE_BOTTOM_PADDING));
+    var singleNodeColumn = ((location.column.childNodeIds || []).length <= 1);
+    var rowNodeCount = 0;
+    for (var i = 0; i < location.row.columns.length; i += 1) {
+      rowNodeCount += (location.row.columns[i].childNodeIds || []).length;
+    }
+    var singleNodeRow = rowNodeCount <= 1;
+
+    // Managed widths are column-driven; single-node columns also have row-driven heights.
+    var boundedMinWidth = Math.max(minWidth, columnWidth);
+    var boundedMaxWidth = boundedMinWidth;
+    // For single-node rows, allow shrinking back down to intrinsic min height.
+    var boundedMinHeight = minHeight;
+    if (singleNodeColumn && !singleNodeRow) {
+      boundedMinHeight = Math.max(minHeight, rowHeight);
+    }
+    // If this row has exactly one node, allow vertical resizing to drive row height.
+    var boundedMaxHeight = Number.POSITIVE_INFINITY;
+    if (!singleNodeRow && singleNodeColumn) {
+      boundedMaxHeight = boundedMinHeight;
+    }
+
+    return {
+      minWidth: boundedMinWidth,
+      maxWidth: boundedMaxWidth,
+      minHeight: boundedMinHeight,
+      maxHeight: boundedMaxHeight,
+    };
+  }
+
+  function isManagedNodeResizeLocked(node) {
+    var bounds = getManagedNodeResizeBounds(node);
+    if (!bounds) {
+      return false;
+    }
+    var widthLocked = Math.abs(bounds.maxWidth - bounds.minWidth) < 0.5;
+    var heightLocked = isFinite(bounds.maxHeight) && Math.abs(bounds.maxHeight - bounds.minHeight) < 0.5;
+    return widthLocked && heightLocked;
+  }
+
   function queueGroupRelayout(group, shouldPush) {
     if (!group || !group.__isSmartGrid) {
       return;
@@ -668,13 +826,24 @@
     return row.columns[colIndex];
   }
 
-  function removeNodeFromAllSmartColumns(graph, nodeId) {
-    if (!graph || nodeId == null) {
+  function addUniqueGroup(list, group) {
+    if (!list || !group) {
       return;
     }
+    if (list.indexOf(group) === -1) {
+      list.push(group);
+    }
+  }
+
+  function removeNodeFromAllSmartColumns(graph, nodeId) {
+    if (!graph || nodeId == null) {
+      return [];
+    }
     var removed = false;
+    var affected = [];
     var groups = getSmartGroups(graph);
     for (var g = 0; g < groups.length; g += 1) {
+      var groupChanged = false;
       var state = ensureGroupState(groups[g]);
       for (var r = 0; r < state.rows.length; r += 1) {
         var row = state.rows[r];
@@ -684,17 +853,134 @@
           if (idx !== -1) {
             ids.splice(idx, 1);
             removed = true;
+            groupChanged = true;
           }
         }
+      }
+      if (groupChanged) {
+        affected.push(groups[g]);
       }
     }
     if (removed) {
       var node = getNodeById(graph, nodeId);
       if (node) {
         node.__smartGridManaged = false;
-        node.__smartGridResizeLocked = false;
       }
     }
+    return affected;
+  }
+
+  function clampManagedNodeSize(node, width, height) {
+    var FALLBACK_MIN = 10;
+    if (!node) {
+      return [
+        Math.max(FALLBACK_MIN, getSafeNodeAxis(width, FALLBACK_MIN)),
+        Math.max(FALLBACK_MIN, getSafeNodeAxis(height, FALLBACK_MIN)),
+      ];
+    }
+
+    var bounds = getManagedNodeResizeBounds(node);
+    var intrinsicMin = getNodeIntrinsicMinSize(node);
+    var minWidth = Math.max(FALLBACK_MIN, getSafeNodeAxis(intrinsicMin[0], FALLBACK_MIN));
+    var minHeight = Math.max(FALLBACK_MIN, getSafeNodeAxis(intrinsicMin[1], FALLBACK_MIN));
+    var maxWidth = Number.POSITIVE_INFINITY;
+    var maxHeight = Number.POSITIVE_INFINITY;
+
+    if (bounds) {
+      minWidth = Math.max(FALLBACK_MIN, getSafeNodeAxis(bounds.minWidth, minWidth));
+      minHeight = Math.max(FALLBACK_MIN, getSafeNodeAxis(bounds.minHeight, minHeight));
+      if (isFinite(bounds.maxWidth)) {
+        maxWidth = Math.max(minWidth, getSafeNodeAxis(bounds.maxWidth, minWidth));
+      }
+      if (isFinite(bounds.maxHeight)) {
+        maxHeight = Math.max(minHeight, getSafeNodeAxis(bounds.maxHeight, minHeight));
+      }
+    }
+
+    var safeWidth = Math.max(minWidth, getSafeNodeAxis(width, minWidth));
+    var safeHeight = Math.max(minHeight, getSafeNodeAxis(height, minHeight));
+    if (isFinite(maxWidth)) {
+      safeWidth = Math.min(safeWidth, maxWidth);
+    }
+    if (isFinite(maxHeight)) {
+      safeHeight = Math.min(safeHeight, maxHeight);
+    }
+    return [safeWidth, safeHeight];
+  }
+
+  function ensureManagedNodeResizeHook(node) {
+    if (!node || node.__smartGridResizeHooked) {
+      return;
+    }
+    var originalOnResize = typeof node.onResize === "function" ? node.onResize : null;
+    node.onResize = function (size) {
+      if (this.__smartGridManaged && !this.__smartGridLayoutSizing) {
+        var target = [0, 0];
+        if (size && size.length >= 2) {
+          target = [getSafeNodeAxis(size[0], 0), getSafeNodeAxis(size[1], 0)];
+        } else if (this.size && this.size.length >= 2) {
+          target = [getSafeNodeAxis(this.size[0], 0), getSafeNodeAxis(this.size[1], 0)];
+        }
+        var clamped = clampManagedNodeSize(this, target[0], target[1]);
+        if (!this.size || this.size.length < 2) {
+          this.size = [clamped[0], clamped[1]];
+        } else {
+          this.size[0] = clamped[0];
+          this.size[1] = clamped[1];
+        }
+        this.__smartGridManualSize = [clamped[0], clamped[1]];
+      }
+      if (originalOnResize) {
+        return originalOnResize.apply(this, arguments);
+      }
+      return undefined;
+    };
+    node.__smartGridResizeHooked = true;
+  }
+
+  function rowHasAnyNodes(row) {
+    if (!row || !Array.isArray(row.columns)) {
+      return false;
+    }
+    for (var c = 0; c < row.columns.length; c += 1) {
+      if (Array.isArray(row.columns[c].childNodeIds) && row.columns[c].childNodeIds.length > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function removeRowIfEmpty(group, rowIndex) {
+    var state = ensureGroupState(group);
+    if (!state || !Array.isArray(state.rows) || state.rows.length <= 1) {
+      return false;
+    }
+    var index = clamp(rowIndex, 0, state.rows.length - 1);
+    var row = state.rows[index];
+    if (!row || rowHasAnyNodes(row)) {
+      return false;
+    }
+    state.rows.splice(index, 1);
+    group.__smartGridPreserveHeightsOnNextLayout = true;
+    updateLayout(group, true);
+    group.setDirtyCanvas(true, true);
+    return true;
+  }
+
+  function pruneTrailingEmptyRows(state) {
+    if (!state || !Array.isArray(state.rows)) {
+      return false;
+    }
+    var changed = false;
+    while (state.rows.length > 1) {
+      var tail = state.rows[state.rows.length - 1];
+      if (!tail || rowHasAnyNodes(tail)) {
+        break;
+      }
+      state.rows.pop();
+      changed = true;
+    }
+    return changed;
   }
 
   function snapshotNodePositions(graph) {
@@ -739,6 +1025,7 @@
     }
     group.__smartGridUpdatingLayout = true;
     var state = ensureGroupState(group);
+    var preserveRowHeights = !!group.__smartGridPreserveHeightsOnNextLayout;
     try {
       var oldHeight = group.size[1];
       var oldBottom = group.pos[1] + oldHeight;
@@ -782,19 +1069,97 @@
       var rows = geometry.rows;
       var contentBottom = group.pos[1] + HEADER_HEIGHT;
 
+      // Pass 1: resolve row heights from node minimum/manual requirements.
       for (var rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-        var rowRect = rows[rowIndex];
         var rowState = state.rows[rowIndex];
         normalizeRowFlexPercents(rowState);
-        var tallest = MIN_ROW_HEIGHT;
+        var rowColumns = rowState.columns || [];
+        var rowHasNodes = false;
+        for (var rowColIndex = 0; rowColIndex < rowColumns.length; rowColIndex += 1) {
+          if ((rowColumns[rowColIndex].childNodeIds || []).length > 0) {
+            rowHasNodes = true;
+            break;
+          }
+        }
+
+        if (preserveRowHeights) {
+          rowState.heightPx = Math.max(MIN_ROW_HEIGHT, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
+          contentBottom += rowState.heightPx;
+          continue;
+        }
+
+        if (!rowHasNodes) {
+          var emptyBaseHeight = Math.max(MIN_ROW_HEIGHT, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
+          if (isFinite(Number(rowState.__manualHeightPx))) {
+            emptyBaseHeight = Math.max(emptyBaseHeight, Number(rowState.__manualHeightPx));
+          }
+          rowState.heightPx = emptyBaseHeight;
+          // Preserve empty-row height so re-docking a shorter node does not cause abrupt spacing jumps.
+          rowState.__preserveHeightOnNextDock = true;
+          contentBottom += rowState.heightPx;
+          continue;
+        }
+
+        var rowContentHeight = Math.max(24, MIN_ROW_HEIGHT - ROW_NODE_TOP_PADDING - ROW_NODE_BOTTOM_PADDING);
+
+        for (var baselineCol = 0; baselineCol < rowColumns.length; baselineCol += 1) {
+          var baselineIds = Array.isArray(rowColumns[baselineCol].childNodeIds)
+            ? rowColumns[baselineCol].childNodeIds
+            : [];
+          for (var baselineNodeIndex = 0; baselineNodeIndex < baselineIds.length; baselineNodeIndex += 1) {
+            var baselineNode = getNodeById(group.graph, baselineIds[baselineNodeIndex]);
+            if (!baselineNode) {
+              continue;
+            }
+            var baselineMin = getNodeIntrinsicMinSize(baselineNode);
+            var baselineMinHeight = Math.max(0, Number(baselineMin[1]) || 0);
+            var manualBaseline = baselineNode.__smartGridManualSize && baselineNode.__smartGridManualSize.length >= 2
+              ? Math.max(0, Number(baselineNode.__smartGridManualSize[1]) || 0)
+              : 0;
+            var baselineHeight = Math.max(baselineMinHeight, manualBaseline);
+            if (baselineHeight > rowContentHeight) {
+              rowContentHeight = baselineHeight;
+            }
+          }
+        }
+
+        var computedRowHeight = Math.max(
+          MIN_ROW_HEIGHT,
+          rowContentHeight + ROW_NODE_TOP_PADDING + ROW_NODE_BOTTOM_PADDING
+        );
+        if (rowState.__preserveHeightOnNextDock) {
+          computedRowHeight = Math.max(computedRowHeight, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
+          rowState.__preserveHeightOnNextDock = false;
+        }
+        if (isFinite(Number(rowState.__manualHeightPx))) {
+          computedRowHeight = Math.max(computedRowHeight, Number(rowState.__manualHeightPx));
+        }
+        rowState.heightPx = computedRowHeight;
+        contentBottom += rowState.heightPx;
+      }
+
+      // Lock container height before placement so row geometry uses stable pixel heights.
+      var desiredHeight = Math.max(80, Math.round((contentBottom - group.pos[1]) + ROW_PADDING * 0.5));
+      group.size[1] = desiredHeight;
+
+      // Row heights changed; refresh geometry before placement.
+      geometry = getGridGeometry(group);
+      rows = geometry.rows;
+
+      // Pass 2: place nodes and stretch cell height (single-node columns stretch to row height).
+      for (var rowIndex2 = 0; rowIndex2 < rows.length; rowIndex2 += 1) {
+        var rowRect = rows[rowIndex2];
+        var rowState2 = state.rows[rowIndex2];
+        var rowHeightTarget = Math.max(24, rowRect.height - ROW_NODE_TOP_PADDING - ROW_NODE_BOTTOM_PADDING);
 
         for (var colIndex = 0; colIndex < rowRect.columns.length; colIndex += 1) {
           var colRect = rowRect.columns[colIndex];
-          var column = rowState.columns[colIndex];
+          var column = rowState2.columns[colIndex];
           var y = rowRect.y + ROW_NODE_TOP_PADDING;
           var insets = getColumnHorizontalInsets(rowRect.columns.length, colIndex);
           var keptNodeIds = [];
           var nodeIds = Array.isArray(column.childNodeIds) ? column.childNodeIds.slice() : [];
+          var shouldStretchColumn = nodeIds.length <= 1;
 
           for (var n = 0; n < nodeIds.length; n += 1) {
             var node = getNodeById(group.graph, nodeIds[n]);
@@ -803,16 +1168,24 @@
             }
             keptNodeIds.push(node.id);
             node.__smartGridManaged = true;
-            node.__smartGridResizeLocked = true;
+            ensureManagedNodeResizeHook(node);
 
             var minSize = getNodeIntrinsicMinSize(node);
             var minNodeWidth = Math.max(0, Number(minSize[0]) || 0);
             var minNodeHeight = Math.max(0, Number(minSize[1]) || 0);
             var availableNodeWidth = Math.max(40, Math.round(colRect.width - insets.total));
-            var targetNodeWidth = availableNodeWidth > minNodeWidth ? availableNodeWidth : minNodeWidth;
+            var manualSize = node.__smartGridManualSize && node.__smartGridManualSize.length >= 2
+              ? node.__smartGridManualSize
+              : null;
+            var manualHeight = manualSize ? Math.max(0, Number(manualSize[1]) || 0) : 0;
             var currentHeight = node.size && node.size.length >= 2 ? Number(node.size[1]) || 0 : 0;
-            var targetNodeHeight = Math.max(minNodeHeight, currentHeight);
             var currentWidth = node.size && node.size.length >= 1 ? Number(node.size[0]) || 0 : 0;
+            // Width is always column-driven for managed nodes.
+            var targetNodeWidth = Math.max(availableNodeWidth, minNodeWidth);
+            var targetNodeHeightBase = Math.max(minNodeHeight, manualHeight);
+            var targetNodeHeight = shouldStretchColumn
+              ? Math.max(targetNodeHeightBase, rowHeightTarget)
+              : targetNodeHeightBase;
 
             if (
               !node.size ||
@@ -838,20 +1211,10 @@
             node.__smartGridLastMinSize = [minNodeWidth, minNodeHeight];
           }
           column.childNodeIds = keptNodeIds;
-          var usedHeight = Math.max(
-            MIN_ROW_HEIGHT,
-            y - rowRect.y + ROW_NODE_BOTTOM_PADDING - NODE_VERTICAL_GAP
-          );
-          if (usedHeight > tallest) {
-            tallest = usedHeight;
-          }
         }
-
-        rowState.heightPx = tallest;
-        contentBottom += tallest;
       }
 
-      var newHeight = Math.max(80, Math.round((contentBottom - group.pos[1]) + ROW_PADDING * 0.5));
+      var newHeight = desiredHeight;
       group.size[1] = newHeight;
 
       var deltaY = newHeight - oldHeight;
@@ -859,6 +1222,7 @@
         pushItemsBelow(group, deltaY, oldBottom);
       }
     } finally {
+      group.__smartGridPreserveHeightsOnNextLayout = false;
       group.__smartGridUpdatingLayout = false;
     }
   }
@@ -1143,7 +1507,7 @@
       };
       for (var i = 0; i < o.smart_grid.rows.length; i += 1) {
         var inputRow = o.smart_grid.rows[i];
-        var row = createRowFromPreset([100]);
+        var row = createRowFromPreset([50, 50]);
         row.id = inputRow.id || row.id;
         row.heightPx = Math.max(MIN_ROW_HEIGHT, Number(inputRow.heightPx) || MIN_ROW_HEIGHT);
         row.columns = [];
@@ -1162,7 +1526,7 @@
         this.__smartGridState.rows.push(row);
       }
       if (!this.__smartGridState.rows.length) {
-        this.__smartGridState.rows.push(createRowFromPreset([100]));
+        this.__smartGridState.rows.push(createRowFromPreset([50, 50]));
       }
       return;
     }
@@ -1190,6 +1554,9 @@
     }
 
     var rowIndex = getContextRowIndex(this, group);
+    var state = ensureGroupState(group);
+    var candidateRow = state.rows[rowIndex];
+    var canRemoveRow = !!candidateRow && !rowHasAnyNodes(candidateRow) && state.rows.length > 1;
     options.push(
       null,
       {
@@ -1208,6 +1575,13 @@
           title: "Row Presets",
           extra: group,
           options: buildPresetMenu(group, rowIndex, false),
+        },
+      },
+      {
+        content: "Remove Row",
+        disabled: !canRemoveRow,
+        callback: function () {
+          removeRowIfEmpty(group, rowIndex);
         },
       }
     );
@@ -1247,6 +1621,19 @@
       clickedNode = this.graph.getNodeOnPos(event.canvasX, event.canvasY, this.visible_nodes);
     }
     if (isLeftButton) {
+      var rowHit = findRowDividerHit(this, event.canvasX, event.canvasY);
+      if (rowHit) {
+        this.__smartGridRowDividerDrag = {
+          group: rowHit.group,
+          upperIndex: rowHit.upperIndex,
+          lowerIndex: rowHit.lowerIndex,
+          previousSelectedGroup: this.selected_group || null,
+        };
+        this.selected_group_resizing = false;
+        this.dirty_canvas = true;
+        this.dirty_bgcanvas = true;
+        return true;
+      }
       var hit = findSplitterHit(this, event.canvasX, event.canvasY);
       if (hit) {
         this.__smartGridSplitterDrag = {
@@ -1268,10 +1655,20 @@
       isLeftButton &&
       this.resizing_node &&
       this.resizing_node.__smartGridManaged &&
-      this.resizing_node.__smartGridResizeLocked
+      isManagedNodeResizeLocked(this.resizing_node)
     ) {
-      // Managed nodes are width-slaved to SmartGrid columns; block direct corner resizing.
+      // If SmartGrid constraints collapse min/max, block resize handle interaction.
       this.resizing_node = null;
+    }
+    if (
+      isLeftButton &&
+      this.selected_group_resizing &&
+      this.selected_group &&
+      this.selected_group.__isSmartGrid
+    ) {
+      this.selected_group.__smartGridResizeStartHeight = this.selected_group.size
+        ? this.selected_group.size[1]
+        : 0;
     }
     if (isLeftButton && clickedNode && clickedNode.id != null) {
       this.__smartGridNodeDragSnapshot = {
@@ -1297,6 +1694,48 @@
   window.LGraphCanvas.prototype.processMouseMove = function (event) {
     if (event && typeof this.adjustMouseEvent === "function") {
       this.adjustMouseEvent(event);
+    }
+
+    var rowDividerDrag = this.__smartGridRowDividerDrag;
+    if (rowDividerDrag) {
+      var rowGroup = rowDividerDrag.group;
+      if (!rowGroup || !rowGroup.__isSmartGrid) {
+        this.__smartGridRowDividerDrag = null;
+        return true;
+      }
+
+      var rowState = ensureGroupState(rowGroup);
+      var upperRow = rowState.rows[rowDividerDrag.upperIndex];
+      var lowerRow = rowState.rows[rowDividerDrag.lowerIndex];
+      if (!upperRow || !lowerRow) {
+        this.__smartGridRowDividerDrag = null;
+        return true;
+      }
+
+      var rowGeometry = getGridGeometry(rowGroup);
+      var upperRect = rowGeometry.rows[rowDividerDrag.upperIndex];
+      var lowerRect = rowGeometry.rows[rowDividerDrag.lowerIndex];
+      if (!upperRect || !lowerRect) {
+        return true;
+      }
+
+      var pairTop = upperRect.y;
+      var minUpper = getRowRequiredHeightPx(rowGroup, rowDividerDrag.upperIndex);
+      var rawUpper = event.canvasY - pairTop;
+      var snappedUpper = roundToSnapPixels(rawUpper);
+      // Divider drag controls the row above only. The row below keeps its own height.
+      var nextUpper = Math.max(minUpper, snappedUpper);
+
+      upperRow.__manualHeightPx = nextUpper;
+      upperRow.heightPx = nextUpper;
+
+      updateLayout(rowGroup, false);
+      this.dirty_canvas = true;
+      this.dirty_bgcanvas = true;
+      if (this.canvas && this.canvas.style) {
+        this.canvas.style.cursor = "row-resize";
+      }
+      return true;
     }
 
     var splitterDrag = this.__smartGridSplitterDrag;
@@ -1371,16 +1810,19 @@
     }
 
     var result = originalProcessMouseMove.apply(this, arguments);
-    if (this.resizing_node && this.resizing_node.__smartGridManaged && this.resizing_node.__smartGridResizeLocked) {
+    if (
+      this.resizing_node &&
+      this.resizing_node.__smartGridManaged &&
+      isManagedNodeResizeLocked(this.resizing_node)
+    ) {
       this.resizing_node = null;
     }
-
     // Keep SmartGrid children responsive while the group bounding box is resized.
     if (this.selected_group_resizing && this.selected_group && this.selected_group.__isSmartGrid) {
       var minResizeWidth = getGroupMinWidthPx(this.selected_group);
       this.selected_group.size = [
         Math.max(minResizeWidth, roundToSnapPixels(this.selected_group.size[0])),
-        Math.max(80, roundToSnapPixels(this.selected_group.size[1])),
+        this.selected_group.__smartGridResizeStartHeight || this.selected_group.size[1],
       ];
       updateLayout(this.selected_group, false);
       this.dirty_canvas = true;
@@ -1390,10 +1832,17 @@
     var isBusyDragging =
       !!this.node_dragged || !!this.resizing_node || !!this.dragging_canvas || !!this.dragging_rectangle;
     if (!isBusyDragging && event && typeof event.canvasX === "number" && typeof event.canvasY === "number") {
+      var rowDividerHoverHit = findRowDividerHit(this, event.canvasX, event.canvasY);
       var splitterHoverHit = findSplitterHit(this, event.canvasX, event.canvasY);
-      if (splitterHoverHit && this.canvas && this.canvas.style) {
+      if (rowDividerHoverHit && this.canvas && this.canvas.style) {
+        this.canvas.style.cursor = "row-resize";
+      } else if (splitterHoverHit && this.canvas && this.canvas.style) {
         this.canvas.style.cursor = "col-resize";
-      } else if (this.canvas && this.canvas.style && this.canvas.style.cursor === "col-resize") {
+      } else if (
+        this.canvas &&
+        this.canvas.style &&
+        (this.canvas.style.cursor === "col-resize" || this.canvas.style.cursor === "row-resize")
+      ) {
         this.canvas.style.cursor = "";
       }
     }
@@ -1439,6 +1888,21 @@
       this.adjustMouseEvent(event);
     }
 
+    var rowDividerDrag = this.__smartGridRowDividerDrag;
+    if (rowDividerDrag) {
+      this.__smartGridRowDividerDrag = null;
+      if (rowDividerDrag.group && rowDividerDrag.group.__isSmartGrid) {
+        // Row divider resizing should only resize the SmartGrid itself,
+        // not push unrelated nodes/groups below it.
+        updateLayout(rowDividerDrag.group, false);
+      }
+      this.selected_group = rowDividerDrag.previousSelectedGroup || null;
+      this.selected_group_resizing = false;
+      this.dirty_canvas = true;
+      this.dirty_bgcanvas = true;
+      return true;
+    }
+
     var splitterDrag = this.__smartGridSplitterDrag;
     if (splitterDrag) {
       this.__smartGridSplitterDrag = null;
@@ -1464,39 +1928,86 @@
       var minGroupWidth = getGroupMinWidthPx(resizedGroup);
       resizedGroup.size = [
         Math.max(minGroupWidth, roundToSnapPixels(resizedGroup.size[0])),
-        Math.max(80, roundToSnapPixels(resizedGroup.size[1])),
+        resizedGroup.__smartGridResizeStartHeight || resizedGroup.size[1],
       ];
       updateLayout(resizedGroup, false);
+      resizedGroup.__smartGridResizeStartHeight = 0;
     }
 
     if (draggedNode) {
       var hit = findDropTargetForNode(this, draggedNode);
       if (hit) {
         var dragSnapshot = this.__smartGridNodeDragSnapshot;
-        removeNodeFromAllSmartColumns(this.graph, draggedNode.id);
         var targetCol = getColumnByIndex(hit.group, hit.rowIndex, hit.colIndex);
         if (targetCol) {
           if (!Array.isArray(targetCol.childNodeIds)) {
             targetCol.childNodeIds = [];
           }
-          if (targetCol.childNodeIds.indexOf(draggedNode.id) === -1) {
-            targetCol.childNodeIds.push(draggedNode.id);
+          var occupyingNodeId = null;
+          for (var existingIndex = 0; existingIndex < targetCol.childNodeIds.length; existingIndex += 1) {
+            var existingId = targetCol.childNodeIds[existingIndex];
+            if (existingId !== draggedNode.id) {
+              occupyingNodeId = existingId;
+              break;
+            }
           }
-          // Dropping into a column should only reflow the grid internals.
-          // Avoid pushing unrelated free nodes/groups during ordinary drops.
-          if (
-            dragSnapshot &&
-            dragSnapshot.positions &&
-            (dragSnapshot.primaryNodeId == null || dragSnapshot.primaryNodeId === draggedNode.id)
-          ) {
-            restoreSnapshotExcept(this.graph, dragSnapshot.positions, draggedNode.id);
+
+          var impactedGroups = [];
+          var sourceGroup = findManagingGroupForNode(this.graph, draggedNode.id);
+          var sourceLocation = sourceGroup ? findManagedNodeLocation(sourceGroup, draggedNode.id) : null;
+          var hasSourceCell = !!(sourceGroup && sourceLocation);
+          var sourceIsTargetCell =
+            hasSourceCell &&
+            sourceGroup === hit.group &&
+            sourceLocation.rowIndex === hit.rowIndex &&
+            sourceLocation.colIndex === hit.colIndex;
+
+          // Occupied targets require a real source cell to swap with.
+          var canSwapIntoOccupiedTarget = occupyingNodeId == null || (hasSourceCell && !sourceIsTargetCell);
+          if (canSwapIntoOccupiedTarget) {
+            var previousGroups = removeNodeFromAllSmartColumns(this.graph, draggedNode.id);
+            impactedGroups = impactedGroups.concat(previousGroups);
+
+            // Enforce one node per cell; if occupied, swap occupant into dragged node's source cell.
+            if (occupyingNodeId != null) {
+              var occupyingGroups = removeNodeFromAllSmartColumns(this.graph, occupyingNodeId);
+              impactedGroups = impactedGroups.concat(occupyingGroups);
+
+              if (hasSourceCell) {
+                var sourceCol = getColumnByIndex(sourceGroup, sourceLocation.rowIndex, sourceLocation.colIndex);
+                if (sourceCol) {
+                  sourceCol.childNodeIds = [occupyingNodeId];
+                  addUniqueGroup(impactedGroups, sourceGroup);
+                }
+              }
+            }
+
+            targetCol.childNodeIds = [draggedNode.id];
+            addUniqueGroup(impactedGroups, hit.group);
+
+            // Dropping into a column should only reflow the grid internals.
+            // Avoid pushing unrelated free nodes/groups during ordinary drops.
+            if (
+              dragSnapshot &&
+              dragSnapshot.positions &&
+              (dragSnapshot.primaryNodeId == null || dragSnapshot.primaryNodeId === draggedNode.id)
+            ) {
+              restoreSnapshotExcept(this.graph, dragSnapshot.positions, draggedNode.id);
+            }
+            for (var pg = 0; pg < impactedGroups.length; pg += 1) {
+              if (impactedGroups[pg]) {
+                updateLayout(impactedGroups[pg], false);
+              }
+            }
           }
-          updateLayout(hit.group, false);
         }
       } else {
         // If a previously managed node is dropped outside any SmartGrid column,
         // release ownership so later grid reflows do not pull it back in.
-        removeNodeFromAllSmartColumns(this.graph, draggedNode.id);
+        var releasedGroups = removeNodeFromAllSmartColumns(this.graph, draggedNode.id);
+        for (var rg = 0; rg < releasedGroups.length; rg += 1) {
+          updateLayout(releasedGroups[rg], false);
+        }
       }
     }
 
@@ -1527,15 +2038,46 @@
     return result;
   };
 
+  if (typeof originalGraphRemove === "function" && !window.LGraph.prototype.__smartGridRemovePatched) {
+    window.LGraph.prototype.remove = function (item) {
+      var managedGroup = null;
+      var nodeId = null;
+      if (item && item.constructor !== window.LGraphGroup && item.id != null) {
+        nodeId = item.id;
+        managedGroup = findManagingGroupForNode(this, nodeId);
+      }
+      var result = originalGraphRemove.apply(this, arguments);
+      if (managedGroup && nodeId != null) {
+        removeNodeFromAllSmartColumns(this, nodeId);
+        queueGroupRelayout(managedGroup, true);
+      }
+      return result;
+    };
+    window.LGraph.prototype.__smartGridRemovePatched = true;
+  }
+
   if (typeof originalNodeSetSize === "function" && !window.LGraphNode.prototype.__smartGridSetSizePatched) {
     window.LGraphNode.prototype.setSize = function (size) {
-      var result = originalNodeSetSize.apply(this, arguments);
+      var managedGroup = null;
+      var nextSize = size;
+      if (this && this.graph && !this.__smartGridLayoutSizing) {
+        managedGroup = findManagingGroupForNode(this.graph, this.id);
+        if (managedGroup) {
+          this.__smartGridManaged = true;
+          ensureManagedNodeResizeHook(this);
+          if (size && size.length >= 2) {
+            var clampedSize = clampManagedNodeSize(this, size[0], size[1]);
+            nextSize = [clampedSize[0], clampedSize[1]];
+            this.__smartGridManualSize = [clampedSize[0], clampedSize[1]];
+          }
+        }
+      }
+
+      var result = originalNodeSetSize.call(this, nextSize);
       if (!this || !this.graph || this.__smartGridLayoutSizing) {
         return result;
       }
-      var managedGroup = findManagingGroupForNode(this.graph, this.id);
       if (managedGroup) {
-        this.__smartGridManaged = true;
         queueGroupRelayout(managedGroup, false);
       }
       return result;
