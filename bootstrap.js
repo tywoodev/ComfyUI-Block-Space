@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  var LOCAL_ASSET_VERSION = "2026-02-25-smartgrid-alignments-v9";
+  var LOCAL_ASSET_VERSION = "2026-02-25-smartgrid-alignments-v10";
 
   var statusLines = [];
   var statusEl = document.getElementById("status-overlay");

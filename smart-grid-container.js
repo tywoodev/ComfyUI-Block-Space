@@ -971,7 +971,7 @@
     return null;
   }
 
-  function getColumnInsertionHint(group, rowIndex, colIndex, cursorY) {
+  function getColumnInsertionHint(group, rowIndex, colIndex, cursorY, excludeNodeId) {
     var state = ensureGroupState(group);
     var row = state.rows[rowIndex];
     if (!row || !row.columns || !row.columns[colIndex]) {
@@ -994,6 +994,9 @@
     var ids = Array.isArray(column.childNodeIds) ? column.childNodeIds : [];
     var existingNodes = [];
     for (var i = 0; i < ids.length; i += 1) {
+      if (excludeNodeId != null && ids[i] === excludeNodeId) {
+        continue;
+      }
       var node = getNodeById(group.graph, ids[i]);
       if (node && node.pos && node.size && node.size.length >= 2) {
         existingNodes.push(node);
@@ -2624,7 +2627,13 @@
       }
       var hit = findColumnHit(group, centerX, centerY);
       if (hit) {
-        var insertion = getColumnInsertionHint(group, hit.rowIndex, hit.colIndex, centerY);
+        var insertion = getColumnInsertionHint(
+          group,
+          hit.rowIndex,
+          hit.colIndex,
+          centerY,
+          node.id
+        );
         hit.insertIndex = insertion.insertIndex;
         hit.insertLineY = insertion.lineY;
         return hit;
