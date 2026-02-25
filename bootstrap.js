@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  var LOCAL_ASSET_VERSION = "2026-02-25-phase4-sizing-conflict-1";
+  var LOCAL_ASSET_VERSION = "2026-02-25-phase4-grid-hud-spacing-1";
 
   var statusLines = [];
   var statusEl = document.getElementById("status-overlay");

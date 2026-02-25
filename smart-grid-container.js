@@ -16,10 +16,32 @@
 
   var SNAP_INCREMENT = 5;
   var SPLITTER_HITBOX = 10;
-  var ROW_PADDING = 20;
   var HEADER_HEIGHT = 32;
   var MIN_ROW_HEIGHT = 70;
+  var GRID_SETTINGS_STORAGE_KEY = "smart_grid_layout_settings_v1";
+  var DEFAULT_GRID_SETTINGS = {
+    rowPadding: 28,
+    rowTopPadding: 52,
+    rowBottomPadding: 46,
+    nodeVerticalGap: 40,
+    gridLineWidth: 2,
+    gridLineAlpha: 0.32,
+  };
+  var gridSettings = {
+    rowPadding: DEFAULT_GRID_SETTINGS.rowPadding,
+    rowTopPadding: DEFAULT_GRID_SETTINGS.rowTopPadding,
+    rowBottomPadding: DEFAULT_GRID_SETTINGS.rowBottomPadding,
+    nodeVerticalGap: DEFAULT_GRID_SETTINGS.nodeVerticalGap,
+    gridLineWidth: DEFAULT_GRID_SETTINGS.gridLineWidth,
+    gridLineAlpha: DEFAULT_GRID_SETTINGS.gridLineAlpha,
+  };
+  var ROW_PADDING = gridSettings.rowPadding;
   var INNER_NODE_PADDING = ROW_PADDING;
+  var ROW_NODE_TOP_PADDING = gridSettings.rowTopPadding;
+  var ROW_NODE_BOTTOM_PADDING = gridSettings.rowBottomPadding;
+  var NODE_VERTICAL_GAP = gridSettings.nodeVerticalGap;
+  var GRID_LINE_WIDTH = gridSettings.gridLineWidth;
+  var GRID_LINE_ALPHA = gridSettings.gridLineAlpha;
 
   var originalOnGroupAdd = window.LGraphCanvas.onGroupAdd;
   var originalGroupSerialize = window.LGraphGroup.prototype.serialize;
@@ -36,6 +58,85 @@
 
   function nextId(prefix) {
     return prefix + "_" + Math.floor(Math.random() * 1000000000);
+  }
+
+  function toNumber(value, fallback) {
+    var parsed = Number(value);
+    return isFinite(parsed) ? parsed : fallback;
+  }
+
+  function clampNumber(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function applyGridSettings(partial, skipPersist) {
+    if (!partial) {
+      return;
+    }
+
+    gridSettings.rowPadding = clampNumber(
+      toNumber(partial.rowPadding, gridSettings.rowPadding),
+      8,
+      120
+    );
+    gridSettings.rowTopPadding = clampNumber(
+      toNumber(partial.rowTopPadding, gridSettings.rowTopPadding),
+      16,
+      200
+    );
+    gridSettings.rowBottomPadding = clampNumber(
+      toNumber(partial.rowBottomPadding, gridSettings.rowBottomPadding),
+      12,
+      200
+    );
+    gridSettings.nodeVerticalGap = clampNumber(
+      toNumber(partial.nodeVerticalGap, gridSettings.nodeVerticalGap),
+      8,
+      140
+    );
+    gridSettings.gridLineWidth = clampNumber(
+      toNumber(partial.gridLineWidth, gridSettings.gridLineWidth),
+      1,
+      5
+    );
+    gridSettings.gridLineAlpha = clampNumber(
+      toNumber(partial.gridLineAlpha, gridSettings.gridLineAlpha),
+      0.1,
+      0.9
+    );
+
+    ROW_PADDING = gridSettings.rowPadding;
+    INNER_NODE_PADDING = ROW_PADDING;
+    ROW_NODE_TOP_PADDING = Math.max(ROW_PADDING + 4, gridSettings.rowTopPadding);
+    ROW_NODE_BOTTOM_PADDING = Math.max(ROW_PADDING + 2, gridSettings.rowBottomPadding);
+    NODE_VERTICAL_GAP = gridSettings.nodeVerticalGap;
+    GRID_LINE_WIDTH = gridSettings.gridLineWidth;
+    GRID_LINE_ALPHA = gridSettings.gridLineAlpha;
+    if (window.SmartGrid) {
+      window.SmartGrid.ROW_PADDING = ROW_PADDING;
+    }
+
+    if (!skipPersist) {
+      try {
+        localStorage.setItem(GRID_SETTINGS_STORAGE_KEY, JSON.stringify(gridSettings));
+      } catch (error) {
+        // Ignore storage failures.
+      }
+    }
+  }
+
+  function loadGridSettings() {
+    try {
+      var raw = localStorage.getItem(GRID_SETTINGS_STORAGE_KEY);
+      if (!raw) {
+        applyGridSettings(DEFAULT_GRID_SETTINGS, true);
+        return;
+      }
+      var parsed = JSON.parse(raw);
+      applyGridSettings(parsed || DEFAULT_GRID_SETTINGS, true);
+    } catch (error) {
+      applyGridSettings(DEFAULT_GRID_SETTINGS, true);
+    }
   }
 
   function normalizeColumns(widths) {
@@ -486,6 +587,26 @@
     }, 0);
   }
 
+  function relayoutAllSmartGroups(graph) {
+    if (!graph) {
+      return;
+    }
+    var groups = getSmartGroups(graph);
+    for (var i = 0; i < groups.length; i += 1) {
+      updateLayout(groups[i], false);
+      groups[i].setDirtyCanvas(true, true);
+    }
+    if (graph.list_of_graphcanvas && graph.list_of_graphcanvas.length) {
+      for (var c = 0; c < graph.list_of_graphcanvas.length; c += 1) {
+        var canvas = graph.list_of_graphcanvas[c];
+        if (canvas) {
+          canvas.dirty_canvas = true;
+          canvas.dirty_bgcanvas = true;
+        }
+      }
+    }
+  }
+
   function isXOverlap(aLeft, aRight, bLeft, bRight) {
     return aLeft < bRight && aRight > bLeft;
   }
@@ -659,7 +780,7 @@
         for (var colIndex = 0; colIndex < rowRect.columns.length; colIndex += 1) {
           var colRect = rowRect.columns[colIndex];
           var column = rowState.columns[colIndex];
-          var y = rowRect.y + INNER_NODE_PADDING;
+          var y = rowRect.y + ROW_NODE_TOP_PADDING;
           var insets = getColumnHorizontalInsets(rowRect.columns.length, colIndex);
           var keptNodeIds = [];
           var nodeIds = Array.isArray(column.childNodeIds) ? column.childNodeIds.slice() : [];
@@ -702,11 +823,14 @@
 
             node.pos[0] = Math.round(colRect.x + insets.left);
             node.pos[1] = Math.round(y);
-            y += (node.size ? node.size[1] : targetNodeHeight || 60) + INNER_NODE_PADDING;
+            y += (node.size ? node.size[1] : targetNodeHeight || 60) + NODE_VERTICAL_GAP;
             node.__smartGridLastMinSize = [minNodeWidth, minNodeHeight];
           }
           column.childNodeIds = keptNodeIds;
-          var usedHeight = Math.max(MIN_ROW_HEIGHT, y - rowRect.y + INNER_NODE_PADDING);
+          var usedHeight = Math.max(
+            MIN_ROW_HEIGHT,
+            y - rowRect.y + ROW_NODE_BOTTOM_PADDING - NODE_VERTICAL_GAP
+          );
           if (usedHeight > tallest) {
             tallest = usedHeight;
           }
@@ -736,8 +860,8 @@
     var hover = canvas.__smartGridHover;
 
     ctx.save();
-    ctx.strokeStyle = "rgba(255,255,255,0.22)";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(255,255,255," + GRID_LINE_ALPHA + ")";
+    ctx.lineWidth = GRID_LINE_WIDTH;
 
     for (var r = 0; r < geometry.rows.length; r += 1) {
       var row = geometry.rows[r];
@@ -863,6 +987,73 @@
       return findRowIndexAtY(group, context.canvasY);
     }
     return 0;
+  }
+
+  function syncHudWithGridSettings() {
+    var rowPaddingInput = document.getElementById("smartgrid-row-padding");
+    var topPaddingInput = document.getElementById("smartgrid-top-padding");
+    var bottomPaddingInput = document.getElementById("smartgrid-bottom-padding");
+    var nodeGapInput = document.getElementById("smartgrid-node-gap");
+    if (!rowPaddingInput || !topPaddingInput || !bottomPaddingInput || !nodeGapInput) {
+      return false;
+    }
+    rowPaddingInput.value = String(Math.round(gridSettings.rowPadding));
+    topPaddingInput.value = String(Math.round(gridSettings.rowTopPadding));
+    bottomPaddingInput.value = String(Math.round(gridSettings.rowBottomPadding));
+    nodeGapInput.value = String(Math.round(gridSettings.nodeVerticalGap));
+    return true;
+  }
+
+  function setupHudGridSettingsControls() {
+    var rowPaddingInput = document.getElementById("smartgrid-row-padding");
+    var topPaddingInput = document.getElementById("smartgrid-top-padding");
+    var bottomPaddingInput = document.getElementById("smartgrid-bottom-padding");
+    var nodeGapInput = document.getElementById("smartgrid-node-gap");
+    if (!rowPaddingInput || !topPaddingInput || !bottomPaddingInput || !nodeGapInput) {
+      return false;
+    }
+
+    if (rowPaddingInput.__smartGridBound) {
+      syncHudWithGridSettings();
+      return true;
+    }
+
+    function applyFromHud() {
+      applyGridSettings({
+        rowPadding: rowPaddingInput.value,
+        rowTopPadding: topPaddingInput.value,
+        rowBottomPadding: bottomPaddingInput.value,
+        nodeVerticalGap: nodeGapInput.value,
+      });
+      var activeCanvas = window.LGraphCanvas.active_canvas;
+      if (activeCanvas && activeCanvas.graph) {
+        relayoutAllSmartGroups(activeCanvas.graph);
+      } else if (window.__demoGraph) {
+        relayoutAllSmartGroups(window.__demoGraph);
+      }
+      syncHudWithGridSettings();
+    }
+
+    rowPaddingInput.addEventListener("input", applyFromHud);
+    topPaddingInput.addEventListener("input", applyFromHud);
+    bottomPaddingInput.addEventListener("input", applyFromHud);
+    nodeGapInput.addEventListener("input", applyFromHud);
+    rowPaddingInput.addEventListener("change", applyFromHud);
+    topPaddingInput.addEventListener("change", applyFromHud);
+    bottomPaddingInput.addEventListener("change", applyFromHud);
+    nodeGapInput.addEventListener("change", applyFromHud);
+    rowPaddingInput.__smartGridBound = true;
+    topPaddingInput.__smartGridBound = true;
+    bottomPaddingInput.__smartGridBound = true;
+    nodeGapInput.__smartGridBound = true;
+    syncHudWithGridSettings();
+    return true;
+  }
+
+  loadGridSettings();
+  if (!setupHudGridSettingsControls()) {
+    setTimeout(setupHudGridSettingsControls, 0);
+    setTimeout(setupHudGridSettingsControls, 150);
   }
 
   window.LGraphCanvas.onGroupAdd = function (info, entry, mouse_event) {
@@ -1331,6 +1522,24 @@
     SNAP_INCREMENT: SNAP_INCREMENT,
     SPLITTER_HITBOX: SPLITTER_HITBOX,
     ROW_PADDING: ROW_PADDING,
+    getLayoutSettings: function () {
+      return {
+        rowPadding: gridSettings.rowPadding,
+        rowTopPadding: gridSettings.rowTopPadding,
+        rowBottomPadding: gridSettings.rowBottomPadding,
+        nodeVerticalGap: gridSettings.nodeVerticalGap,
+        gridLineWidth: gridSettings.gridLineWidth,
+        gridLineAlpha: gridSettings.gridLineAlpha,
+      };
+    },
+    setLayoutSettings: function (partialSettings) {
+      applyGridSettings(partialSettings || {});
+      var activeCanvas = window.LGraphCanvas.active_canvas;
+      if (activeCanvas && activeCanvas.graph) {
+        relayoutAllSmartGroups(activeCanvas.graph);
+      }
+      syncHudWithGridSettings();
+    },
   };
 
   window.__smartGridDebug = {
