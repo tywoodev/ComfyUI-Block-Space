@@ -414,6 +414,66 @@
     return null;
   }
 
+  function getColumnInsertionHint(group, rowIndex, colIndex, cursorY) {
+    var state = ensureGroupState(group);
+    var row = state.rows[rowIndex];
+    if (!row || !row.columns || !row.columns[colIndex]) {
+      return {
+        insertIndex: 0,
+        lineY: cursorY,
+      };
+    }
+
+    var geometry = getGridGeometry(group);
+    var rowRect = geometry.rows[rowIndex];
+    if (!rowRect) {
+      return {
+        insertIndex: 0,
+        lineY: cursorY,
+      };
+    }
+
+    var column = row.columns[colIndex];
+    var ids = Array.isArray(column.childNodeIds) ? column.childNodeIds : [];
+    var existingNodes = [];
+    for (var i = 0; i < ids.length; i += 1) {
+      var node = getNodeById(group.graph, ids[i]);
+      if (node && node.pos && node.size && node.size.length >= 2) {
+        existingNodes.push(node);
+      }
+    }
+
+    var stackTopY = rowRect.y + ROW_NODE_TOP_PADDING;
+    var stackBottomY = rowRect.y + rowRect.height - ROW_NODE_BOTTOM_PADDING;
+    if (!existingNodes.length) {
+      return {
+        insertIndex: 0,
+        lineY: clamp(cursorY, stackTopY, stackBottomY),
+      };
+    }
+
+    for (var n = 0; n < existingNodes.length; n += 1) {
+      var current = existingNodes[n];
+      var midY = current.pos[1] + current.size[1] * 0.5;
+      if (cursorY < midY) {
+        var beforeY = n === 0
+          ? stackTopY
+          : (existingNodes[n - 1].pos[1] + existingNodes[n - 1].size[1] + current.pos[1]) * 0.5;
+        return {
+          insertIndex: n,
+          lineY: clamp(beforeY, stackTopY, stackBottomY),
+        };
+      }
+    }
+
+    var last = existingNodes[existingNodes.length - 1];
+    var afterY = last.pos[1] + last.size[1] + NODE_VERTICAL_GAP * 0.5;
+    return {
+      insertIndex: existingNodes.length,
+      lineY: clamp(afterY, stackTopY, stackBottomY),
+    };
+  }
+
   function findSplitterHit(canvas, canvasX, canvasY) {
     if (!canvas || !canvas.graph) {
       return null;
@@ -1251,6 +1311,17 @@
         ) {
           ctx.fillStyle = "rgba(255,255,255,0.1)";
           ctx.fillRect(col.x, col.y, col.width, col.height);
+          if (typeof hover.insertLineY === "number") {
+            var lineY = clamp(hover.insertLineY, col.y + 4, col.y + col.height - 4);
+            ctx.save();
+            ctx.strokeStyle = "rgba(255,255,255,0.92)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(col.x + 8, lineY + 0.5);
+            ctx.lineTo(col.x + col.width - 8, lineY + 0.5);
+            ctx.stroke();
+            ctx.restore();
+          }
         }
 
         if (c < row.columns.length - 1) {
@@ -1318,6 +1389,9 @@
       }
       var hit = findColumnHit(group, centerX, centerY);
       if (hit) {
+        var insertion = getColumnInsertionHint(group, hit.rowIndex, hit.colIndex, centerY);
+        hit.insertIndex = insertion.insertIndex;
+        hit.insertLineY = insertion.lineY;
         return hit;
       }
     }
@@ -1912,7 +1986,8 @@
         (!this.__smartGridHover ||
           this.__smartGridHover.group !== hover.group ||
           this.__smartGridHover.rowIndex !== hover.rowIndex ||
-          this.__smartGridHover.colIndex !== hover.colIndex)
+          this.__smartGridHover.colIndex !== hover.colIndex ||
+          this.__smartGridHover.insertIndex !== hover.insertIndex)
       ) {
         this.__smartGridHover = hover;
         this.dirty_bgcanvas = true;
@@ -1991,9 +2066,16 @@
           var previousGroups = removeNodeFromAllSmartColumns(this.graph, draggedNode.id);
           impactedGroups = impactedGroups.concat(previousGroups);
 
-          // Multi-node stacking: append dropped node to target cell stack.
+          // Multi-node stacking: insert into stack at hover-indicated position.
           if (targetCol.childNodeIds.indexOf(draggedNode.id) === -1) {
-            targetCol.childNodeIds.push(draggedNode.id);
+            var targetInsertIndex = Math.max(
+              0,
+              Math.min(
+                targetCol.childNodeIds.length,
+                typeof hit.insertIndex === "number" ? Math.floor(hit.insertIndex) : targetCol.childNodeIds.length
+              )
+            );
+            targetCol.childNodeIds.splice(targetInsertIndex, 0, draggedNode.id);
           }
           addUniqueGroup(impactedGroups, hit.group);
           var targetState = ensureGroupState(hit.group);
@@ -2041,6 +2123,12 @@
           var row = state.rows[r];
           for (var c = 0; c < row.columns.length; c += 1) {
             if ((row.columns[c].childNodeIds || []).indexOf(resizedNode.id) !== -1) {
+              var currentRowHeight = Math.max(MIN_ROW_HEIGHT, Number(row.heightPx) || MIN_ROW_HEIGHT);
+              var requiredRowHeight = getRowRequiredHeightPx(groups[g], r);
+              if (requiredRowHeight > currentRowHeight) {
+                row.__manualHeightPx = requiredRowHeight;
+                row.heightPx = requiredRowHeight;
+              }
               updateLayout(groups[g], true);
               found = true;
               break;
