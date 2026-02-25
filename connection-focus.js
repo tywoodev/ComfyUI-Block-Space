@@ -33,6 +33,7 @@
   };
   var defaultSettings = {
     pulseColor: "#ff00ae",
+    connectorStubLength: 34,
   };
 
   function getFocusSettings() {
@@ -43,6 +44,10 @@
     if (typeof settings.pulseColor !== "string" || !settings.pulseColor.trim()) {
       settings.pulseColor = defaultSettings.pulseColor;
     }
+    if (typeof settings.connectorStubLength !== "number" || !isFinite(settings.connectorStubLength)) {
+      settings.connectorStubLength = defaultSettings.connectorStubLength;
+    }
+    settings.connectorStubLength = Math.max(10, Math.min(80, settings.connectorStubLength));
     return settings;
   }
 
@@ -134,10 +139,14 @@
       if (typeof partialSettings.pulseColor === "string" && partialSettings.pulseColor.trim()) {
         settings.pulseColor = partialSettings.pulseColor.trim();
       }
+      if (typeof partialSettings.connectorStubLength === "number" && isFinite(partialSettings.connectorStubLength)) {
+        settings.connectorStubLength = Math.max(10, Math.min(80, partialSettings.connectorStubLength));
+      }
     }
     markCanvasDirty(focusState.activeCanvas);
     return {
       pulseColor: settings.pulseColor,
+      connectorStubLength: settings.connectorStubLength,
     };
   };
 
@@ -299,14 +308,11 @@
     var ay = a[1];
     var bx = b[0];
     var by = b[1];
-    var dx = bx - ax;
-    var absDx = Math.abs(dx);
-
     var settings = getFocusSettings();
     var pulseColor = settings.pulseColor;
     var dashOffset = -((animationTime || 0) * 0.028);
     var prevLineWidth = ctx.lineWidth || 1;
-    var dist = Math.max(20, Math.min(100, absDx * 0.5));
+    var stub = settings.connectorStubLength;
 
     ctx.save();
     ctx.globalAlpha = Math.min(1, ctx.globalAlpha * 0.95);
@@ -317,10 +323,7 @@
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    // Draw an explicit spline overlay so configured color is always respected.
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.bezierCurveTo(ax + dist, ay, bx - dist, by, bx, by);
+    drawHardAnglePath(ctx, ax, ay, bx, by, stub);
     ctx.stroke();
     ctx.restore();
   }
@@ -354,10 +357,60 @@
     ctx.restore();
   }
 
+  function drawHardAngleLink(argsLike) {
+    if (!argsLike || !argsLike.length) {
+      return;
+    }
+    var ctx = argsLike[0];
+    if (!ctx) {
+      return;
+    }
+    var a = argsLike[1];
+    var b = argsLike[2];
+    if (!a || !b || a.length < 2 || b.length < 2) {
+      return;
+    }
+
+    var ax = a[0];
+    var ay = a[1];
+    var bx = b[0];
+    var by = b[1];
+    var settings = getFocusSettings();
+    var stub = settings.connectorStubLength;
+
+    ctx.save();
+    ctx.lineJoin = "miter";
+    ctx.lineCap = "round";
+    drawHardAnglePath(ctx, ax, ay, bx, by, stub);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawHardAnglePath(ctx, ax, ay, bx, by, stub) {
+    // Keep endpoint stubs fixed relative to sockets for predictable tracing.
+    var startX = ax + stub;
+    var endX = bx - stub;
+    var needsDetour = endX <= startX + 8;
+    var laneX = Math.max(startX, endX) + stub;
+
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(startX, ay);
+    if (needsDetour) {
+      // When nodes cross, route through a fixed outer lane so links stay visible.
+      ctx.lineTo(laneX, ay);
+      ctx.lineTo(laneX, by);
+      ctx.lineTo(endX, by);
+    } else {
+      ctx.lineTo(endX, by);
+    }
+    ctx.lineTo(bx, by);
+  }
+
   window.LGraphCanvas.prototype.renderLink = function (ctx, a, b) {
     var focus = getActiveFocus(this);
     if (!focus) {
-      return originalRenderLink.apply(this, arguments);
+      return drawHardAngleLink(arguments);
     }
 
     var link = extractLinkInfo(arguments);
@@ -375,12 +428,12 @@
     if (!isConnected) {
       ctx.save();
       ctx.globalAlpha = ctx.globalAlpha * 0.12;
-      var dimResult = originalRenderLink.apply(this, arguments);
+      var dimResult = drawHardAngleLink(arguments);
       ctx.restore();
       return dimResult;
     }
 
-    var result = originalRenderLink.apply(this, arguments);
+    var result = drawHardAngleLink(arguments);
     if (link.origin_id === focus.activeNodeId || link.target_id === focus.activeNodeId) {
       drawFlowOverlay(this, arguments, focus.animationTime || 0);
     }
