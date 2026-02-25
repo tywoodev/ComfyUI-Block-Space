@@ -414,6 +414,66 @@
     return null;
   }
 
+  function getColumnInsertionHint(group, rowIndex, colIndex, cursorY) {
+    var state = ensureGroupState(group);
+    var row = state.rows[rowIndex];
+    if (!row || !row.columns || !row.columns[colIndex]) {
+      return {
+        insertIndex: 0,
+        lineY: cursorY,
+      };
+    }
+
+    var geometry = getGridGeometry(group);
+    var rowRect = geometry.rows[rowIndex];
+    if (!rowRect) {
+      return {
+        insertIndex: 0,
+        lineY: cursorY,
+      };
+    }
+
+    var column = row.columns[colIndex];
+    var ids = Array.isArray(column.childNodeIds) ? column.childNodeIds : [];
+    var existingNodes = [];
+    for (var i = 0; i < ids.length; i += 1) {
+      var node = getNodeById(group.graph, ids[i]);
+      if (node && node.pos && node.size && node.size.length >= 2) {
+        existingNodes.push(node);
+      }
+    }
+
+    var stackTopY = rowRect.y + ROW_NODE_TOP_PADDING;
+    var stackBottomY = rowRect.y + rowRect.height - ROW_NODE_BOTTOM_PADDING;
+    if (!existingNodes.length) {
+      return {
+        insertIndex: 0,
+        lineY: clamp(cursorY, stackTopY, stackBottomY),
+      };
+    }
+
+    for (var n = 0; n < existingNodes.length; n += 1) {
+      var current = existingNodes[n];
+      var midY = current.pos[1] + current.size[1] * 0.5;
+      if (cursorY < midY) {
+        var beforeY = n === 0
+          ? stackTopY
+          : (existingNodes[n - 1].pos[1] + existingNodes[n - 1].size[1] + current.pos[1]) * 0.5;
+        return {
+          insertIndex: n,
+          lineY: clamp(beforeY, stackTopY, stackBottomY),
+        };
+      }
+    }
+
+    var last = existingNodes[existingNodes.length - 1];
+    var afterY = last.pos[1] + last.size[1] + NODE_VERTICAL_GAP * 0.5;
+    return {
+      insertIndex: existingNodes.length,
+      lineY: clamp(afterY, stackTopY, stackBottomY),
+    };
+  }
+
   function findSplitterHit(canvas, canvasX, canvasY) {
     if (!canvas || !canvas.graph) {
       return null;
@@ -536,6 +596,7 @@
     var rowContentHeight = Math.max(24, MIN_ROW_HEIGHT - ROW_NODE_TOP_PADDING - ROW_NODE_BOTTOM_PADDING);
     for (var c = 0; c < row.columns.length; c += 1) {
       var ids = row.columns[c].childNodeIds || [];
+      var columnContentHeight = 0;
       for (var i = 0; i < ids.length; i += 1) {
         var node = getNodeById(group.graph, ids[i]);
         if (!node) {
@@ -547,9 +608,13 @@
           ? Math.max(0, Number(node.__smartGridManualSize[1]) || 0)
           : 0;
         var requiredHeight = Math.max(minHeight, manualHeight);
-        if (requiredHeight > rowContentHeight) {
-          rowContentHeight = requiredHeight;
-        }
+        columnContentHeight += requiredHeight;
+      }
+      if (ids.length > 1) {
+        columnContentHeight += NODE_VERTICAL_GAP * (ids.length - 1);
+      }
+      if (columnContentHeight > rowContentHeight) {
+        rowContentHeight = columnContentHeight;
       }
     }
     return Math.max(
@@ -1113,72 +1178,18 @@
       var rows = geometry.rows;
       var contentBottom = group.pos[1] + HEADER_HEIGHT;
 
-      // Pass 1: resolve row heights from node minimum/manual requirements.
+      // Pass 1: use only persisted/manual row heights (no auto vertical resize from content).
       for (var rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
         var rowState = state.rows[rowIndex];
         normalizeRowFlexPercents(rowState);
-        var rowColumns = rowState.columns || [];
-        var rowHasNodes = false;
-        for (var rowColIndex = 0; rowColIndex < rowColumns.length; rowColIndex += 1) {
-          if ((rowColumns[rowColIndex].childNodeIds || []).length > 0) {
-            rowHasNodes = true;
-            break;
-          }
-        }
-
-        if (preserveRowHeights) {
-          rowState.heightPx = Math.max(MIN_ROW_HEIGHT, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
-          contentBottom += rowState.heightPx;
-          continue;
-        }
-
-        if (!rowHasNodes) {
-          var emptyBaseHeight = Math.max(MIN_ROW_HEIGHT, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
-          if (isFinite(Number(rowState.__manualHeightPx))) {
-            emptyBaseHeight = Math.max(emptyBaseHeight, Number(rowState.__manualHeightPx));
-          }
-          rowState.heightPx = emptyBaseHeight;
-          // Preserve empty-row height so re-docking a shorter node does not cause abrupt spacing jumps.
-          rowState.__preserveHeightOnNextDock = true;
-          contentBottom += rowState.heightPx;
-          continue;
-        }
-
-        var rowContentHeight = Math.max(24, MIN_ROW_HEIGHT - ROW_NODE_TOP_PADDING - ROW_NODE_BOTTOM_PADDING);
-
-        for (var baselineCol = 0; baselineCol < rowColumns.length; baselineCol += 1) {
-          var baselineIds = Array.isArray(rowColumns[baselineCol].childNodeIds)
-            ? rowColumns[baselineCol].childNodeIds
-            : [];
-          for (var baselineNodeIndex = 0; baselineNodeIndex < baselineIds.length; baselineNodeIndex += 1) {
-            var baselineNode = getNodeById(group.graph, baselineIds[baselineNodeIndex]);
-            if (!baselineNode) {
-              continue;
-            }
-            var baselineMin = getNodeIntrinsicMinSize(baselineNode);
-            var baselineMinHeight = Math.max(0, Number(baselineMin[1]) || 0);
-            var manualBaseline = baselineNode.__smartGridManualSize && baselineNode.__smartGridManualSize.length >= 2
-              ? Math.max(0, Number(baselineNode.__smartGridManualSize[1]) || 0)
-              : 0;
-            var baselineHeight = Math.max(baselineMinHeight, manualBaseline);
-            if (baselineHeight > rowContentHeight) {
-              rowContentHeight = baselineHeight;
-            }
-          }
-        }
-
-        var computedRowHeight = Math.max(
-          MIN_ROW_HEIGHT,
-          rowContentHeight + ROW_NODE_TOP_PADDING + ROW_NODE_BOTTOM_PADDING
-        );
-        if (rowState.__preserveHeightOnNextDock) {
-          computedRowHeight = Math.max(computedRowHeight, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
-          rowState.__preserveHeightOnNextDock = false;
-        }
+        var baseHeight = Math.max(MIN_ROW_HEIGHT, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
         if (isFinite(Number(rowState.__manualHeightPx))) {
-          computedRowHeight = Math.max(computedRowHeight, Number(rowState.__manualHeightPx));
+          baseHeight = Math.max(baseHeight, Number(rowState.__manualHeightPx));
         }
-        rowState.heightPx = computedRowHeight;
+        if (preserveRowHeights) {
+          baseHeight = Math.max(MIN_ROW_HEIGHT, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
+        }
+        rowState.heightPx = baseHeight;
         contentBottom += rowState.heightPx;
       }
 
@@ -1227,9 +1238,8 @@
             // Width is always column-driven for managed nodes.
             var targetNodeWidth = Math.max(availableNodeWidth, minNodeWidth);
             var targetNodeHeightBase = Math.max(minNodeHeight, manualHeight);
-            var targetNodeHeight = shouldStretchColumn
-              ? Math.max(targetNodeHeightBase, rowHeightTarget)
-              : targetNodeHeightBase;
+            // Keep node height stable unless explicitly resized or clamped by node minimum.
+            var targetNodeHeight = targetNodeHeightBase;
 
             if (
               !node.size ||
@@ -1301,6 +1311,17 @@
         ) {
           ctx.fillStyle = "rgba(255,255,255,0.1)";
           ctx.fillRect(col.x, col.y, col.width, col.height);
+          if (typeof hover.insertLineY === "number") {
+            var lineY = clamp(hover.insertLineY, col.y + 4, col.y + col.height - 4);
+            ctx.save();
+            ctx.strokeStyle = "rgba(255,255,255,0.92)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(col.x + 8, lineY + 0.5);
+            ctx.lineTo(col.x + col.width - 8, lineY + 0.5);
+            ctx.stroke();
+            ctx.restore();
+          }
         }
 
         if (c < row.columns.length - 1) {
@@ -1368,6 +1389,9 @@
       }
       var hit = findColumnHit(group, centerX, centerY);
       if (hit) {
+        var insertion = getColumnInsertionHint(group, hit.rowIndex, hit.colIndex, centerY);
+        hit.insertIndex = insertion.insertIndex;
+        hit.insertLineY = insertion.lineY;
         return hit;
       }
     }
@@ -1962,7 +1986,8 @@
         (!this.__smartGridHover ||
           this.__smartGridHover.group !== hover.group ||
           this.__smartGridHover.rowIndex !== hover.rowIndex ||
-          this.__smartGridHover.colIndex !== hover.colIndex)
+          this.__smartGridHover.colIndex !== hover.colIndex ||
+          this.__smartGridHover.insertIndex !== hover.insertIndex)
       ) {
         this.__smartGridHover = hover;
         this.dirty_bgcanvas = true;
@@ -2037,68 +2062,45 @@
           if (!Array.isArray(targetCol.childNodeIds)) {
             targetCol.childNodeIds = [];
           }
-          var occupyingNodeId = null;
-          for (var existingIndex = 0; existingIndex < targetCol.childNodeIds.length; existingIndex += 1) {
-            var existingId = targetCol.childNodeIds[existingIndex];
-            if (existingId !== draggedNode.id) {
-              occupyingNodeId = existingId;
-              break;
-            }
+          var impactedGroups = [];
+          var previousGroups = removeNodeFromAllSmartColumns(this.graph, draggedNode.id);
+          impactedGroups = impactedGroups.concat(previousGroups);
+
+          // Multi-node stacking: insert into stack at hover-indicated position.
+          if (targetCol.childNodeIds.indexOf(draggedNode.id) === -1) {
+            var targetInsertIndex = Math.max(
+              0,
+              Math.min(
+                targetCol.childNodeIds.length,
+                typeof hit.insertIndex === "number" ? Math.floor(hit.insertIndex) : targetCol.childNodeIds.length
+              )
+            );
+            targetCol.childNodeIds.splice(targetInsertIndex, 0, draggedNode.id);
+          }
+          addUniqueGroup(impactedGroups, hit.group);
+          var targetState = ensureGroupState(hit.group);
+          var targetRow = targetState.rows[hit.rowIndex];
+          if (targetRow) {
+            // Drop-only row recalculation: expand to fit stacked content + paddings, never shrink.
+            var requiredRowHeight = getRowRequiredHeightPx(hit.group, hit.rowIndex);
+            var currentRowHeight = Math.max(MIN_ROW_HEIGHT, Number(targetRow.heightPx) || MIN_ROW_HEIGHT);
+            var nextRowHeight = Math.max(currentRowHeight, requiredRowHeight);
+            targetRow.__manualHeightPx = nextRowHeight;
+            targetRow.heightPx = nextRowHeight;
           }
 
-          var impactedGroups = [];
-          var sourceGroup = findManagingGroupForNode(this.graph, draggedNode.id);
-          var sourceLocation = sourceGroup ? findManagedNodeLocation(sourceGroup, draggedNode.id) : null;
-          var hasSourceCell = !!(sourceGroup && sourceLocation);
-          var sourceIsTargetCell =
-            hasSourceCell &&
-            sourceGroup === hit.group &&
-            sourceLocation.rowIndex === hit.rowIndex &&
-            sourceLocation.colIndex === hit.colIndex;
-
-          // Occupied targets require a real source cell to swap with.
-          var canSwapIntoOccupiedTarget = occupyingNodeId == null || (hasSourceCell && !sourceIsTargetCell);
-          if (canSwapIntoOccupiedTarget) {
-            var previousGroups = removeNodeFromAllSmartColumns(this.graph, draggedNode.id);
-            impactedGroups = impactedGroups.concat(previousGroups);
-
-            // Enforce one node per cell; if occupied, swap occupant into dragged node's source cell.
-            if (occupyingNodeId != null) {
-              var occupyingGroups = removeNodeFromAllSmartColumns(this.graph, occupyingNodeId);
-              impactedGroups = impactedGroups.concat(occupyingGroups);
-
-              if (hasSourceCell) {
-                var sourceCol = getColumnByIndex(sourceGroup, sourceLocation.rowIndex, sourceLocation.colIndex);
-                if (sourceCol) {
-                  sourceCol.childNodeIds = [occupyingNodeId];
-                  addUniqueGroup(impactedGroups, sourceGroup);
-                }
-              }
-            }
-
-            targetCol.childNodeIds = [draggedNode.id];
-            addUniqueGroup(impactedGroups, hit.group);
-            var targetState = ensureGroupState(hit.group);
-            var targetRow = targetState.rows[hit.rowIndex];
-            if (targetRow) {
-              // Preserve current row height on this docking pass so shorter drops do not shrink the row,
-              // while taller drops can still expand it via computed content bounds.
-              targetRow.__preserveHeightOnNextDock = true;
-            }
-
-            // Dropping into a column should only reflow the grid internals.
-            // Avoid pushing unrelated free nodes/groups during ordinary drops.
-            if (
-              dragSnapshot &&
-              dragSnapshot.positions &&
-              (dragSnapshot.primaryNodeId == null || dragSnapshot.primaryNodeId === draggedNode.id)
-            ) {
-              restoreSnapshotExcept(this.graph, dragSnapshot.positions, draggedNode.id);
-            }
-            for (var pg = 0; pg < impactedGroups.length; pg += 1) {
-              if (impactedGroups[pg]) {
-                updateLayout(impactedGroups[pg], false);
-              }
+          // Dropping into a column should only reflow the grid internals.
+          // Avoid pushing unrelated free nodes/groups during ordinary drops.
+          if (
+            dragSnapshot &&
+            dragSnapshot.positions &&
+            (dragSnapshot.primaryNodeId == null || dragSnapshot.primaryNodeId === draggedNode.id)
+          ) {
+            restoreSnapshotExcept(this.graph, dragSnapshot.positions, draggedNode.id);
+          }
+          for (var pg = 0; pg < impactedGroups.length; pg += 1) {
+            if (impactedGroups[pg]) {
+              updateLayout(impactedGroups[pg], false);
             }
           }
         }
@@ -2121,6 +2123,12 @@
           var row = state.rows[r];
           for (var c = 0; c < row.columns.length; c += 1) {
             if ((row.columns[c].childNodeIds || []).indexOf(resizedNode.id) !== -1) {
+              var currentRowHeight = Math.max(MIN_ROW_HEIGHT, Number(row.heightPx) || MIN_ROW_HEIGHT);
+              var requiredRowHeight = getRowRequiredHeightPx(groups[g], r);
+              if (requiredRowHeight > currentRowHeight) {
+                row.__manualHeightPx = requiredRowHeight;
+                row.heightPx = requiredRowHeight;
+              }
               updateLayout(groups[g], true);
               found = true;
               break;
