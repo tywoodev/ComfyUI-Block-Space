@@ -36,6 +36,7 @@
     connectorStubLength: 34,
     connectorStyle: "hybrid",
   };
+  var CONNECTOR_FAN_SPACING = 8;
 
   function normalizeConnectorStyle(styleValue) {
     if (styleValue === "straight" || styleValue === "hybrid" || styleValue === "angled") {
@@ -284,6 +285,31 @@
     return null;
   }
 
+  function addLinkLaneOffsets(links, byKey) {
+    if (!Array.isArray(links) || !links.length || !byKey) {
+      return;
+    }
+    links.sort(function (a, b) {
+      var aNode = a.peerNodeId != null ? Number(a.peerNodeId) : 0;
+      var bNode = b.peerNodeId != null ? Number(b.peerNodeId) : 0;
+      if (aNode !== bNode) {
+        return aNode - bNode;
+      }
+      var aSlot = a.peerSlot != null ? Number(a.peerSlot) : 0;
+      var bSlot = b.peerSlot != null ? Number(b.peerSlot) : 0;
+      if (aSlot !== bSlot) {
+        return aSlot - bSlot;
+      }
+      return String(a.key).localeCompare(String(b.key));
+    });
+
+    var center = (links.length - 1) * 0.5;
+    for (var i = 0; i < links.length; i += 1) {
+      var laneOffset = (i - center) * CONNECTOR_FAN_SPACING;
+      byKey[String(links[i].key)] = laneOffset;
+    }
+  }
+
   function getActiveFocus(canvas) {
     if (!focusState.isHolding || !canvas || focusState.activeCanvas !== canvas || focusState.activeNodeId == null) {
       return null;
@@ -304,6 +330,9 @@
     var sourceOutputSlotsByNode = {};
     var activeOutputSlots = {};
     var activeInputSlots = {};
+    var outgoingGroups = {};
+    var incomingGroups = {};
+    var linkLaneOffsets = {};
 
     if (graph.links) {
       for (var linkId in graph.links) {
@@ -325,6 +354,16 @@
             targetInputsByNode[link.target_id] = {};
           }
           targetInputsByNode[link.target_id][link.target_slot] = true;
+
+          var outGroupKey = String(link.origin_slot);
+          if (!outgoingGroups[outGroupKey]) {
+            outgoingGroups[outGroupKey] = [];
+          }
+          outgoingGroups[outGroupKey].push({
+            key: linkKey,
+            peerNodeId: link.target_id,
+            peerSlot: link.target_slot,
+          });
         }
 
         if (link.target_id === activeNode.id) {
@@ -336,7 +375,28 @@
             sourceOutputSlotsByNode[link.origin_id] = {};
           }
           sourceOutputSlotsByNode[link.origin_id][link.origin_slot] = true;
+
+          var inGroupKey = String(link.target_slot);
+          if (!incomingGroups[inGroupKey]) {
+            incomingGroups[inGroupKey] = [];
+          }
+          incomingGroups[inGroupKey].push({
+            key: linkKey,
+            peerNodeId: link.origin_id,
+            peerSlot: link.origin_slot,
+          });
         }
+      }
+    }
+
+    for (var outKey in outgoingGroups) {
+      if (Object.prototype.hasOwnProperty.call(outgoingGroups, outKey)) {
+        addLinkLaneOffsets(outgoingGroups[outKey], linkLaneOffsets);
+      }
+    }
+    for (var inKey in incomingGroups) {
+      if (Object.prototype.hasOwnProperty.call(incomingGroups, inKey)) {
+        addLinkLaneOffsets(incomingGroups[inKey], linkLaneOffsets);
       }
     }
 
@@ -348,11 +408,12 @@
       sourceOutputSlotsByNode: sourceOutputSlotsByNode,
       activeOutputSlots: activeOutputSlots,
       activeInputSlots: activeInputSlots,
+      linkLaneOffsets: linkLaneOffsets,
       animationTime: focusState.animationTime,
     };
   }
 
-  function drawFlowOverlay(canvas, argsLike, animationTime) {
+  function drawFlowOverlay(canvas, argsLike, animationTime, sourceOffset, targetOffset) {
     if (!canvas || !argsLike || !argsLike.length) {
       return;
     }
@@ -387,7 +448,17 @@
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    drawConfiguredPath(ctx, ax, ay, bx, by, stub, settings.connectorStyle);
+    drawConfiguredPath(
+      ctx,
+      ax,
+      ay,
+      bx,
+      by,
+      stub,
+      settings.connectorStyle,
+      sourceOffset || 0,
+      targetOffset || 0
+    );
     ctx.stroke();
     ctx.restore();
   }
@@ -421,7 +492,7 @@
     ctx.restore();
   }
 
-  function drawHardAngleLink(argsLike) {
+  function drawHardAngleLink(argsLike, sourceOffset, targetOffset) {
     if (!argsLike || !argsLike.length) {
       return;
     }
@@ -445,25 +516,39 @@
     ctx.save();
     ctx.lineJoin = "miter";
     ctx.lineCap = "round";
-    drawConfiguredPath(ctx, ax, ay, bx, by, stub, settings.connectorStyle);
+    drawConfiguredPath(
+      ctx,
+      ax,
+      ay,
+      bx,
+      by,
+      stub,
+      settings.connectorStyle,
+      sourceOffset || 0,
+      targetOffset || 0
+    );
     ctx.stroke();
     ctx.restore();
   }
 
-  function drawConfiguredPath(ctx, ax, ay, bx, by, stub, style) {
+  function drawConfiguredPath(ctx, ax, ay, bx, by, stub, style, sourceOffset, targetOffset) {
+    var so = Number(sourceOffset) || 0;
+    var to = Number(targetOffset) || 0;
     if (style === "straight") {
-      drawStraightPath(ctx, ax, ay, bx, by, stub);
+      drawStraightPath(ctx, ax, ay, bx, by, stub, so, to);
       return;
     }
     if (style === "angled") {
-      drawAngledPath(ctx, ax, ay, bx, by, stub);
+      drawAngledPath(ctx, ax, ay, bx, by, stub, so, to);
       return;
     }
     drawHybridPath(ctx, ax, ay, bx, by, stub);
   }
 
-  function drawStraightPath(ctx, ax, ay, bx, by, stub) {
+  function drawStraightPath(ctx, ax, ay, bx, by, stub, sourceOffset, targetOffset) {
     // Keep endpoint stubs fixed relative to sockets for predictable tracing.
+    var sourceY = ay + (Number(sourceOffset) || 0);
+    var targetY = by + (Number(targetOffset) || 0);
     var startX = ax + stub;
     var endX = bx - stub;
     var needsDetour = endX <= startX + 8;
@@ -472,20 +557,28 @@
 
     ctx.beginPath();
     ctx.moveTo(ax, ay);
-    ctx.lineTo(startX, ay);
-    if (needsDetour) {
-      ctx.lineTo(laneX, ay);
-      ctx.lineTo(laneX, by);
-    } else {
-      ctx.lineTo(midX, ay);
-      ctx.lineTo(midX, by);
+    if (sourceY !== ay) {
+      ctx.lineTo(ax, sourceY);
     }
-    ctx.lineTo(endX, by);
-    ctx.lineTo(bx, by);
+    ctx.lineTo(startX, sourceY);
+    if (needsDetour) {
+      ctx.lineTo(laneX, sourceY);
+      ctx.lineTo(laneX, targetY);
+    } else {
+      ctx.lineTo(midX, sourceY);
+      ctx.lineTo(midX, targetY);
+    }
+    ctx.lineTo(endX, targetY);
+    ctx.lineTo(bx, targetY);
+    if (targetY !== by) {
+      ctx.lineTo(bx, by);
+    }
   }
 
-  function drawAngledPath(ctx, ax, ay, bx, by, stub) {
+  function drawAngledPath(ctx, ax, ay, bx, by, stub, sourceOffset, targetOffset) {
     // Fixed-length endpoint stubs with a single angled center segment.
+    var sourceY = ay + (Number(sourceOffset) || 0);
+    var targetY = by + (Number(targetOffset) || 0);
     var startX = ax + stub;
     var endX = bx - stub;
     var needsDetour = endX <= startX + 8;
@@ -493,15 +586,21 @@
 
     ctx.beginPath();
     ctx.moveTo(ax, ay);
-    ctx.lineTo(startX, ay);
-    if (needsDetour) {
-      ctx.lineTo(laneX, ay);
-      ctx.lineTo(laneX, by);
-      ctx.lineTo(endX, by);
-    } else {
-      ctx.lineTo(endX, by);
+    if (sourceY !== ay) {
+      ctx.lineTo(ax, sourceY);
     }
-    ctx.lineTo(bx, by);
+    ctx.lineTo(startX, sourceY);
+    if (needsDetour) {
+      ctx.lineTo(laneX, sourceY);
+      ctx.lineTo(laneX, targetY);
+      ctx.lineTo(endX, targetY);
+    } else {
+      ctx.lineTo(endX, targetY);
+    }
+    ctx.lineTo(bx, targetY);
+    if (targetY !== by) {
+      ctx.lineTo(bx, by);
+    }
   }
 
   function drawHybridPath(ctx, ax, ay, bx, by, stub) {
@@ -551,9 +650,23 @@
       return dimResult;
     }
 
-    var result = drawHardAngleLink(arguments);
+    var sourceOffset = 0;
+    var targetOffset = 0;
+    var style = getFocusSettings().connectorStyle;
+    if (style === "straight" || style === "angled") {
+      var laneMap = focus.linkLaneOffsets || {};
+      var laneKey = linkKey != null ? String(linkKey) : "";
+      var laneOffset = Number(laneMap[laneKey]) || 0;
+      if (link.origin_id === focus.activeNodeId) {
+        sourceOffset = laneOffset;
+      } else if (link.target_id === focus.activeNodeId) {
+        targetOffset = laneOffset;
+      }
+    }
+
+    var result = drawHardAngleLink(arguments, sourceOffset, targetOffset);
     if (link.origin_id === focus.activeNodeId || link.target_id === focus.activeNodeId) {
-      drawFlowOverlay(this, arguments, focus.animationTime || 0);
+      drawFlowOverlay(this, arguments, focus.animationTime || 0, sourceOffset, targetOffset);
     }
     return result;
   };

@@ -39,6 +39,7 @@
       margin-top: 8px;
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 8px;
       font-size: 12px;
     }
@@ -72,6 +73,16 @@
       cursor: pointer;
     }
 
+    .hud-controls input[type="number"] {
+      width: 52px;
+      border: 1px solid #555;
+      background: #242424;
+      color: #d8d8d8;
+      border-radius: 4px;
+      padding: 2px 4px;
+      font-size: 12px;
+    }
+
     .hud-controls button:hover {
       border-color: #777;
       background: #2c2c2c;
@@ -93,6 +104,16 @@
         <option value="straight">Straight</option>
         <option value="angled">Angled</option>
       </select>
+      <label for="smartgrid-row-padding">Grid pad</label>
+      <input id="smartgrid-row-padding" type="number" min="8" max="120" step="1" value="28" />
+      <label for="smartgrid-top-padding">Top pad</label>
+      <input id="smartgrid-top-padding" type="number" min="16" max="200" step="1" value="52" />
+      <label for="smartgrid-bottom-padding">Bottom pad</label>
+      <input id="smartgrid-bottom-padding" type="number" min="12" max="200" step="1" value="46" />
+      <label for="smartgrid-node-gap">Node gap</label>
+      <input id="smartgrid-node-gap" type="number" min="8" max="140" step="1" value="40" />
+      <label for="smartgrid-border-gap">Border gap</label>
+      <input id="smartgrid-border-gap" type="number" min="0" max="30" step="1" value="6" />
       <button id="reset-workspace-btn" type="button">Reset Workspace</button>
     </div>
   </div>
