@@ -29,6 +29,10 @@
     gridLineColor: "#ffffff",
     gridLineStyle: "solid",
     gridLineAlpha: 0.32,
+    alignmentHintEnabled: true,
+    alignmentSnapEnabled: true,
+    alignmentThresholdPx: 12,
+    edgeToEdgeSnapGapPx: 20,
   };
   var gridSettings = {
     rowPadding: DEFAULT_GRID_SETTINGS.rowPadding,
@@ -40,6 +44,10 @@
     gridLineColor: DEFAULT_GRID_SETTINGS.gridLineColor,
     gridLineStyle: DEFAULT_GRID_SETTINGS.gridLineStyle,
     gridLineAlpha: DEFAULT_GRID_SETTINGS.gridLineAlpha,
+    alignmentHintEnabled: DEFAULT_GRID_SETTINGS.alignmentHintEnabled,
+    alignmentSnapEnabled: DEFAULT_GRID_SETTINGS.alignmentSnapEnabled,
+    alignmentThresholdPx: DEFAULT_GRID_SETTINGS.alignmentThresholdPx,
+    edgeToEdgeSnapGapPx: DEFAULT_GRID_SETTINGS.edgeToEdgeSnapGapPx,
   };
   var ROW_PADDING = gridSettings.rowPadding;
   var INNER_NODE_PADDING = ROW_PADDING;
@@ -51,6 +59,12 @@
   var GRID_LINE_COLOR = gridSettings.gridLineColor;
   var GRID_LINE_STYLE = gridSettings.gridLineStyle;
   var GRID_LINE_ALPHA = gridSettings.gridLineAlpha;
+  var ALIGNMENT_HINT_ENABLED = gridSettings.alignmentHintEnabled;
+  var ALIGNMENT_SNAP_ENABLED = gridSettings.alignmentSnapEnabled;
+  var ALIGNMENT_THRESHOLD_PX = gridSettings.alignmentThresholdPx;
+  var EDGE_TO_EDGE_SNAP_GAP_PX = gridSettings.edgeToEdgeSnapGapPx;
+  var ALIGNMENT_GUIDE_COLOR = "rgba(80,180,255,0.85)";
+  var ALIGNMENT_GUIDE_WIDTH = 2;
   var AUTOFIT_BUTTON_WIDTH = 64;
   var AUTOFIT_BUTTON_HEIGHT = 18;
   var AUTOFIT_BUTTON_MARGIN = 8;
@@ -191,6 +205,22 @@
       0.1,
       0.9
     );
+    if (partial.alignmentHintEnabled != null) {
+      gridSettings.alignmentHintEnabled = !!partial.alignmentHintEnabled;
+    }
+    if (partial.alignmentSnapEnabled != null) {
+      gridSettings.alignmentSnapEnabled = !!partial.alignmentSnapEnabled;
+    }
+    gridSettings.alignmentThresholdPx = clampNumber(
+      toNumber(partial.alignmentThresholdPx, gridSettings.alignmentThresholdPx),
+      4,
+      40
+    );
+    gridSettings.edgeToEdgeSnapGapPx = clampNumber(
+      toNumber(partial.edgeToEdgeSnapGapPx, gridSettings.edgeToEdgeSnapGapPx),
+      0,
+      64
+    );
 
     ROW_PADDING = gridSettings.rowPadding;
     INNER_NODE_PADDING = ROW_PADDING;
@@ -203,6 +233,10 @@
     GRID_LINE_COLOR = gridSettings.gridLineColor;
     GRID_LINE_STYLE = gridSettings.gridLineStyle;
     GRID_LINE_ALPHA = gridSettings.gridLineAlpha;
+    ALIGNMENT_HINT_ENABLED = !!gridSettings.alignmentHintEnabled;
+    ALIGNMENT_SNAP_ENABLED = !!gridSettings.alignmentSnapEnabled;
+    ALIGNMENT_THRESHOLD_PX = gridSettings.alignmentThresholdPx;
+    EDGE_TO_EDGE_SNAP_GAP_PX = gridSettings.edgeToEdgeSnapGapPx;
     if (window.SmartGrid) {
       window.SmartGrid.ROW_PADDING = ROW_PADDING;
     }
@@ -399,6 +433,428 @@
       node.__smartGridManaged = previousManaged;
     }
     return fallback;
+  }
+
+  function getGroupBounds(group) {
+    if (!group || !group.pos || !group.size) {
+      return null;
+    }
+    var left = Number(group.pos[0]) || 0;
+    var top = Number(group.pos[1]) || 0;
+    var width = Math.max(0, Number(group.size[0]) || 0);
+    var height = Math.max(0, Number(group.size[1]) || 0);
+    return {
+      left: left,
+      right: left + width,
+      top: top,
+      bottom: top + height,
+    };
+  }
+
+  function moveGroupWithChildren(group, dx, dy) {
+    if (!group || (!dx && !dy)) {
+      return;
+    }
+    group.pos[0] += dx;
+    group.pos[1] += dy;
+    var nodes = Array.isArray(group._nodes) ? group._nodes : [];
+    for (var i = 0; i < nodes.length; i += 1) {
+      var node = nodes[i];
+      if (!node || !node.pos) {
+        continue;
+      }
+      node.pos[0] += dx;
+      node.pos[1] += dy;
+    }
+  }
+
+  function clearAlignmentState(canvas) {
+    if (!canvas) {
+      return;
+    }
+    canvas.__smartGridAlignmentState = null;
+    canvas.__smartGridAlignmentMode = null;
+  }
+
+  function computeAlignmentState(canvas, draggingGroup) {
+    if (!canvas || !canvas.graph || !draggingGroup) {
+      return null;
+    }
+    var sourceBounds = getGroupBounds(draggingGroup);
+    if (!sourceBounds) {
+      return null;
+    }
+    var groups = getSmartGroups(canvas.graph);
+    if (!groups.length) {
+      return null;
+    }
+    var scale = (canvas.ds && Number(canvas.ds.scale)) ? Number(canvas.ds.scale) : 1;
+    var thresholdCanvas = ALIGNMENT_THRESHOLD_PX / Math.max(0.0001, scale);
+    var bestV = null;
+    var bestVCross = null;
+    var bestH = null;
+    var bestHCross = null;
+
+    for (var i = 0; i < groups.length; i += 1) {
+      var target = groups[i];
+      if (!target || target === draggingGroup) {
+        continue;
+      }
+      var targetBounds = getGroupBounds(target);
+      if (!targetBounds) {
+        continue;
+      }
+
+      var dLeft = targetBounds.left - sourceBounds.left;
+      var dRight = targetBounds.right - sourceBounds.right;
+      var dTop = targetBounds.top - sourceBounds.top;
+      var dBottom = targetBounds.bottom - sourceBounds.bottom;
+
+      if (Math.abs(dLeft) <= thresholdCanvas && (!bestV || Math.abs(dLeft) < Math.abs(bestV.delta))) {
+        bestV = {
+          delta: dLeft,
+          x: targetBounds.left,
+          y1: Math.min(sourceBounds.top, targetBounds.top),
+          y2: Math.max(sourceBounds.bottom, targetBounds.bottom),
+        };
+      }
+      if (Math.abs(dRight) <= thresholdCanvas && (!bestV || Math.abs(dRight) < Math.abs(bestV.delta))) {
+        bestV = {
+          delta: dRight,
+          x: targetBounds.right,
+          y1: Math.min(sourceBounds.top, targetBounds.top),
+          y2: Math.max(sourceBounds.bottom, targetBounds.bottom),
+        };
+      }
+      var dLeftToRight = (targetBounds.right + EDGE_TO_EDGE_SNAP_GAP_PX) - sourceBounds.left;
+      if (
+        Math.abs(dLeftToRight) <= thresholdCanvas &&
+        (!bestVCross || Math.abs(dLeftToRight) < Math.abs(bestVCross.delta))
+      ) {
+        bestVCross = {
+          delta: dLeftToRight,
+          x: targetBounds.right,
+          x2: targetBounds.right + EDGE_TO_EDGE_SNAP_GAP_PX,
+          y1: Math.min(sourceBounds.top, targetBounds.top),
+          y2: Math.max(sourceBounds.bottom, targetBounds.bottom),
+        };
+      }
+      var dRightToLeft = (targetBounds.left - EDGE_TO_EDGE_SNAP_GAP_PX) - sourceBounds.right;
+      if (
+        Math.abs(dRightToLeft) <= thresholdCanvas &&
+        (!bestVCross || Math.abs(dRightToLeft) < Math.abs(bestVCross.delta))
+      ) {
+        bestVCross = {
+          delta: dRightToLeft,
+          x: targetBounds.left,
+          x2: targetBounds.left - EDGE_TO_EDGE_SNAP_GAP_PX,
+          y1: Math.min(sourceBounds.top, targetBounds.top),
+          y2: Math.max(sourceBounds.bottom, targetBounds.bottom),
+        };
+      }
+      if (Math.abs(dTop) <= thresholdCanvas && (!bestH || Math.abs(dTop) < Math.abs(bestH.delta))) {
+        bestH = {
+          delta: dTop,
+          y: targetBounds.top,
+          x1: Math.min(sourceBounds.left, targetBounds.left),
+          x2: Math.max(sourceBounds.right, targetBounds.right),
+        };
+      }
+      if (Math.abs(dBottom) <= thresholdCanvas && (!bestH || Math.abs(dBottom) < Math.abs(bestH.delta))) {
+        bestH = {
+          delta: dBottom,
+          y: targetBounds.bottom,
+          x1: Math.min(sourceBounds.left, targetBounds.left),
+          x2: Math.max(sourceBounds.right, targetBounds.right),
+        };
+      }
+      var dTopToBottom = (targetBounds.bottom + EDGE_TO_EDGE_SNAP_GAP_PX) - sourceBounds.top;
+      if (
+        Math.abs(dTopToBottom) <= thresholdCanvas &&
+        (!bestHCross || Math.abs(dTopToBottom) < Math.abs(bestHCross.delta))
+      ) {
+        bestHCross = {
+          delta: dTopToBottom,
+          y: targetBounds.bottom,
+          y2: targetBounds.bottom + EDGE_TO_EDGE_SNAP_GAP_PX,
+          x1: Math.min(sourceBounds.left, targetBounds.left),
+          x2: Math.max(sourceBounds.right, targetBounds.right),
+        };
+      }
+      var dBottomToTop = (targetBounds.top - EDGE_TO_EDGE_SNAP_GAP_PX) - sourceBounds.bottom;
+      if (
+        Math.abs(dBottomToTop) <= thresholdCanvas &&
+        (!bestHCross || Math.abs(dBottomToTop) < Math.abs(bestHCross.delta))
+      ) {
+        bestHCross = {
+          delta: dBottomToTop,
+          y: targetBounds.top,
+          y2: targetBounds.top - EDGE_TO_EDGE_SNAP_GAP_PX,
+          x1: Math.min(sourceBounds.left, targetBounds.left),
+          x2: Math.max(sourceBounds.right, targetBounds.right),
+        };
+      }
+    }
+
+    var verticalHint = bestV || bestVCross;
+    var horizontalHint = bestH || bestHCross;
+    if (!verticalHint && !horizontalHint) {
+      return null;
+    }
+    return {
+      vertical: verticalHint,
+      horizontal: horizontalHint,
+    };
+  }
+
+  function applyGroupAlignmentDuringDrag(canvas, event) {
+    if (!canvas || !ALIGNMENT_HINT_ENABLED) {
+      return;
+    }
+    var drag = canvas.__smartGridGroupDrag;
+    if (
+      !drag ||
+      !drag.group ||
+      !drag.group.__isSmartGrid ||
+      drag.group !== canvas.selected_group ||
+      canvas.selected_group_resizing ||
+      canvas.node_dragged ||
+      canvas.resizing_node
+    ) {
+      if (canvas.__smartGridAlignmentState && canvas.__smartGridAlignmentMode !== "resize") {
+        clearAlignmentState(canvas);
+        canvas.dirty_bgcanvas = true;
+      }
+      return;
+    }
+    if (event && typeof event.buttons === "number" && (event.buttons & 1) === 0) {
+      if (canvas.__smartGridAlignmentState && canvas.__smartGridAlignmentMode !== "resize") {
+        clearAlignmentState(canvas);
+        canvas.dirty_bgcanvas = true;
+      }
+      return;
+    }
+
+    var alignment = computeAlignmentState(canvas, drag.group);
+    var hadState = !!canvas.__smartGridAlignmentState;
+    if (!alignment) {
+      if (hadState && canvas.__smartGridAlignmentMode !== "resize") {
+        clearAlignmentState(canvas);
+        canvas.dirty_bgcanvas = true;
+      }
+      return;
+    }
+
+    var bypassSnap = !!(event && event.shiftKey);
+    if (ALIGNMENT_SNAP_ENABLED && !bypassSnap) {
+      var dx = alignment.vertical ? alignment.vertical.delta : 0;
+      var dy = alignment.horizontal ? alignment.horizontal.delta : 0;
+      if (dx || dy) {
+        moveGroupWithChildren(drag.group, dx, dy);
+      }
+    }
+
+    canvas.__smartGridAlignmentState = alignment;
+    canvas.__smartGridAlignmentMode = "drag";
+    if (!hadState) {
+      canvas.dirty_bgcanvas = true;
+    } else {
+      canvas.dirty_canvas = true;
+      canvas.dirty_bgcanvas = true;
+    }
+  }
+
+  function computeResizeAlignmentState(canvas, group, nextWidth, nextHeight) {
+    if (!canvas || !group || !group.graph) {
+      return null;
+    }
+    var groups = getSmartGroups(group.graph);
+    if (!groups.length) {
+      return null;
+    }
+    var left = Number(group.pos[0]) || 0;
+    var top = Number(group.pos[1]) || 0;
+    var right = left + Math.max(0, Number(nextWidth) || 0);
+    var bottom = top + Math.max(0, Number(nextHeight) || 0);
+    var scale = (canvas.ds && Number(canvas.ds.scale)) ? Number(canvas.ds.scale) : 1;
+    var thresholdCanvas = ALIGNMENT_THRESHOLD_PX / Math.max(0.0001, scale);
+    var bestVEdge = null;
+    var bestVWidth = null;
+    var bestH = null;
+    var hasRightNeighbor = false;
+    var closestLeftNeighbor = null;
+    var closestLeftGap = Number.POSITIVE_INFINITY;
+    var widthMatchThresholdCanvas = Math.max(thresholdCanvas, 24 / Math.max(0.0001, scale));
+
+    for (var i = 0; i < groups.length; i += 1) {
+      var target = groups[i];
+      if (!target || target === group) {
+        continue;
+      }
+      var tb = getGroupBounds(target);
+      if (!tb) {
+        continue;
+      }
+      var hasVerticalOverlap = !(tb.bottom < top || tb.top > bottom);
+      if (hasVerticalOverlap && tb.left >= right) {
+        hasRightNeighbor = true;
+      }
+      if (hasVerticalOverlap && tb.right <= left) {
+        var leftGap = left - tb.right;
+        if (leftGap < closestLeftGap) {
+          closestLeftGap = leftGap;
+          closestLeftNeighbor = tb;
+        }
+      }
+      var dRightToRight = tb.right - right;
+      if (
+        Math.abs(dRightToRight) <= thresholdCanvas &&
+        (!bestVEdge || Math.abs(dRightToRight) < Math.abs(bestVEdge.delta))
+      ) {
+        bestVEdge = {
+          delta: dRightToRight,
+          x: tb.right,
+          y1: Math.min(top, tb.top),
+          y2: Math.max(bottom, tb.bottom),
+        };
+      }
+      var dRightToLeftGap = (tb.left - EDGE_TO_EDGE_SNAP_GAP_PX) - right;
+      if (
+        Math.abs(dRightToLeftGap) <= thresholdCanvas &&
+        (!bestVEdge || Math.abs(dRightToLeftGap) < Math.abs(bestVEdge.delta))
+      ) {
+        bestVEdge = {
+          delta: dRightToLeftGap,
+          x: tb.left,
+          x2: tb.left - EDGE_TO_EDGE_SNAP_GAP_PX,
+          y1: Math.min(top, tb.top),
+          y2: Math.max(bottom, tb.bottom),
+        };
+      }
+
+      var dBottomToBottom = tb.bottom - bottom;
+      if (Math.abs(dBottomToBottom) <= thresholdCanvas && (!bestH || Math.abs(dBottomToBottom) < Math.abs(bestH.delta))) {
+        bestH = {
+          delta: dBottomToBottom,
+          y: tb.bottom,
+          x1: Math.min(left, tb.left),
+          x2: Math.max(right, tb.right),
+        };
+      }
+      var dBottomToTopGap = (tb.top - EDGE_TO_EDGE_SNAP_GAP_PX) - bottom;
+      if (Math.abs(dBottomToTopGap) <= thresholdCanvas && (!bestH || Math.abs(dBottomToTopGap) < Math.abs(bestH.delta))) {
+        bestH = {
+          delta: dBottomToTopGap,
+          y: tb.top,
+          y2: tb.top - EDGE_TO_EDGE_SNAP_GAP_PX,
+          x1: Math.min(left, tb.left),
+          x2: Math.max(right, tb.right),
+        };
+      }
+    }
+
+    // Width snap fallback: if nothing is to the right, use the closest SmartGrid on the left
+    // as a width reference for right-edge resize guidance/snapping.
+    if (!hasRightNeighbor && closestLeftNeighbor) {
+      var targetRightForWidth = left + Math.max(0, closestLeftNeighbor.right - closestLeftNeighbor.left);
+      var dWidthMatch = targetRightForWidth - right;
+      if (Math.abs(dWidthMatch) <= widthMatchThresholdCanvas) {
+        bestVWidth = {
+          delta: dWidthMatch,
+          x: targetRightForWidth,
+          y1: Math.min(top, closestLeftNeighbor.top),
+          y2: Math.max(bottom, closestLeftNeighbor.bottom),
+        };
+      }
+    }
+
+    var bestV = bestVEdge || bestVWidth;
+    if (bestVEdge && bestVWidth) {
+      var conflictThresholdCanvas = 30 / Math.max(0.0001, scale);
+      var edgeSnapX = typeof bestVEdge.x2 === "number" ? bestVEdge.x2 : bestVEdge.x;
+      var widthSnapX = bestVWidth.x;
+      if (Math.abs(edgeSnapX - widthSnapX) <= conflictThresholdCanvas) {
+        bestV = bestVEdge;
+      } else {
+        bestV = Math.abs(bestVEdge.delta) <= Math.abs(bestVWidth.delta) ? bestVEdge : bestVWidth;
+      }
+    }
+
+    if (!bestV && !bestH) {
+      return null;
+    }
+    return { vertical: bestV, horizontal: bestH };
+  }
+
+  function applyGroupResizeAlignmentDuringDrag(canvas, event, group, sizing) {
+    if (!canvas || !group || !sizing || !ALIGNMENT_HINT_ENABLED) {
+      return sizing;
+    }
+    var alignment = computeResizeAlignmentState(canvas, group, sizing.width, sizing.height);
+    if (!alignment) {
+      if (canvas.__smartGridAlignmentState && canvas.__smartGridAlignmentMode === "resize") {
+        clearAlignmentState(canvas);
+        canvas.dirty_bgcanvas = true;
+      }
+      return sizing;
+    }
+
+    var minWidth = Math.max(10, Number(sizing.minWidth) || 10);
+    var minHeight = Math.max(10, Number(sizing.minHeight) || 10);
+    var bypassSnap = !!(event && event.shiftKey);
+    if (ALIGNMENT_SNAP_ENABLED && !bypassSnap) {
+      if (alignment.vertical) {
+        sizing.width = Math.max(minWidth, sizing.width + alignment.vertical.delta);
+      }
+      if (alignment.horizontal) {
+        sizing.height = Math.max(minHeight, sizing.height + alignment.horizontal.delta);
+      }
+    }
+
+    canvas.__smartGridAlignmentState = alignment;
+    canvas.__smartGridAlignmentMode = "resize";
+    canvas.dirty_canvas = true;
+    canvas.dirty_bgcanvas = true;
+    return sizing;
+  }
+
+  function drawAlignmentGuides(canvas, ctx) {
+    if (!canvas || !ctx || !ALIGNMENT_HINT_ENABLED) {
+      return;
+    }
+    var state = canvas.__smartGridAlignmentState;
+    if (!state) {
+      return;
+    }
+    ctx.save();
+    ctx.strokeStyle = ALIGNMENT_GUIDE_COLOR;
+    ctx.lineWidth = ALIGNMENT_GUIDE_WIDTH;
+    ctx.setLineDash([6, 4]);
+    if (state.vertical) {
+      ctx.beginPath();
+      ctx.moveTo(state.vertical.x + 0.5, state.vertical.y1);
+      ctx.lineTo(state.vertical.x + 0.5, state.vertical.y2);
+      ctx.stroke();
+      if (typeof state.vertical.x2 === "number") {
+        ctx.beginPath();
+        ctx.moveTo(state.vertical.x2 + 0.5, state.vertical.y1);
+        ctx.lineTo(state.vertical.x2 + 0.5, state.vertical.y2);
+        ctx.stroke();
+      }
+    }
+    if (state.horizontal) {
+      ctx.beginPath();
+      ctx.moveTo(state.horizontal.x1, state.horizontal.y + 0.5);
+      ctx.lineTo(state.horizontal.x2, state.horizontal.y + 0.5);
+      ctx.stroke();
+      if (typeof state.horizontal.y2 === "number") {
+        ctx.beginPath();
+        ctx.moveTo(state.horizontal.x1, state.horizontal.y2 + 0.5);
+        ctx.lineTo(state.horizontal.x2, state.horizontal.y2 + 0.5);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
   }
 
   function getGroupInnerMetrics(group) {
@@ -2227,6 +2683,7 @@
     var dividerWidthInput = document.getElementById("smartgrid-divider-width");
     var dividerColorInput = document.getElementById("smartgrid-divider-color");
     var dividerStyleInput = document.getElementById("smartgrid-divider-style");
+    var edgeGapInput = document.getElementById("smartgrid-edge-gap");
     if (
       !rowPaddingInput ||
       !topPaddingInput ||
@@ -2235,7 +2692,8 @@
       !borderGapInput ||
       !dividerWidthInput ||
       !dividerColorInput ||
-      !dividerStyleInput
+      !dividerStyleInput ||
+      !edgeGapInput
     ) {
       return false;
     }
@@ -2247,6 +2705,7 @@
     dividerWidthInput.value = String(Math.round(gridSettings.gridLineWidth));
     dividerColorInput.value = normalizeHexColor(gridSettings.gridLineColor, "#ffffff");
     dividerStyleInput.value = normalizeGridLineStyle(gridSettings.gridLineStyle, "solid");
+    edgeGapInput.value = String(Math.round(gridSettings.edgeToEdgeSnapGapPx));
     return true;
   }
 
@@ -2259,6 +2718,7 @@
     var dividerWidthInput = document.getElementById("smartgrid-divider-width");
     var dividerColorInput = document.getElementById("smartgrid-divider-color");
     var dividerStyleInput = document.getElementById("smartgrid-divider-style");
+    var edgeGapInput = document.getElementById("smartgrid-edge-gap");
     if (
       !rowPaddingInput ||
       !topPaddingInput ||
@@ -2267,7 +2727,8 @@
       !borderGapInput ||
       !dividerWidthInput ||
       !dividerColorInput ||
-      !dividerStyleInput
+      !dividerStyleInput ||
+      !edgeGapInput
     ) {
       return false;
     }
@@ -2287,6 +2748,7 @@
         gridLineWidth: dividerWidthInput.value,
         gridLineColor: dividerColorInput.value,
         gridLineStyle: dividerStyleInput.value,
+        edgeToEdgeSnapGapPx: edgeGapInput.value,
       });
       var activeCanvas = window.LGraphCanvas.active_canvas;
       if (activeCanvas && activeCanvas.graph) {
@@ -2305,6 +2767,7 @@
     dividerWidthInput.addEventListener("input", applyFromHud);
     dividerColorInput.addEventListener("input", applyFromHud);
     dividerStyleInput.addEventListener("input", applyFromHud);
+    edgeGapInput.addEventListener("input", applyFromHud);
     rowPaddingInput.addEventListener("change", applyFromHud);
     topPaddingInput.addEventListener("change", applyFromHud);
     bottomPaddingInput.addEventListener("change", applyFromHud);
@@ -2313,6 +2776,7 @@
     dividerWidthInput.addEventListener("change", applyFromHud);
     dividerColorInput.addEventListener("change", applyFromHud);
     dividerStyleInput.addEventListener("change", applyFromHud);
+    edgeGapInput.addEventListener("change", applyFromHud);
     rowPaddingInput.__smartGridBound = true;
     topPaddingInput.__smartGridBound = true;
     bottomPaddingInput.__smartGridBound = true;
@@ -2321,6 +2785,7 @@
     dividerWidthInput.__smartGridBound = true;
     dividerColorInput.__smartGridBound = true;
     dividerStyleInput.__smartGridBound = true;
+    edgeGapInput.__smartGridBound = true;
     syncHudWithGridSettings();
     return true;
   }
@@ -2484,6 +2949,7 @@
       }
       drawSmartGridOverlay(this, ctx, group);
     }
+    drawAlignmentGuides(this, ctx);
   };
 
   window.LGraphCanvas.prototype.getGroupMenuOptions = function (group) {
@@ -2560,6 +3026,8 @@
     if (event && typeof this.adjustMouseEvent === "function") {
       this.adjustMouseEvent(event);
     }
+    this.__smartGridGroupDrag = null;
+    clearAlignmentState(this);
 
     var isLeftButton = event && (event.button === 0 || event.which === 1);
     var clickedNode = null;
@@ -2620,6 +3088,19 @@
     }
 
     var result = originalProcessMouseDown.apply(this, arguments);
+    this.__smartGridGroupDrag = null;
+    if (
+      isLeftButton &&
+      this.selected_group &&
+      this.selected_group.__isSmartGrid &&
+      !this.selected_group_resizing &&
+      !this.node_dragged &&
+      !this.resizing_node
+    ) {
+      this.__smartGridGroupDrag = {
+        group: this.selected_group,
+      };
+    }
     if (isLeftButton && this.selected_group && this.selected_group.__isSmartGrid) {
       syncSmartGridGroupChildren(this.selected_group);
     }
@@ -2817,13 +3298,21 @@
         return result;
       }
       var minResizeWidth = getGroupMinWidthPx(this.selected_group);
+      var minResizeHeight = isGroupCollapsed(this.selected_group)
+        ? COLLAPSED_GROUP_HEIGHT
+        : 80;
       var desiredHeight = isGroupCollapsed(this.selected_group)
         ? COLLAPSED_GROUP_HEIGHT
         : Math.max(80, roundToSnapPixels(this.selected_group.size[1]));
-      this.selected_group.size = [
-        Math.max(minResizeWidth, roundToSnapPixels(this.selected_group.size[0])),
-        desiredHeight,
-      ];
+      var sizing = {
+        width: Math.max(minResizeWidth, roundToSnapPixels(this.selected_group.size[0])),
+        height: desiredHeight,
+        minWidth: minResizeWidth,
+        minHeight: minResizeHeight,
+      };
+      sizing = applyGroupResizeAlignmentDuringDrag(this, event, this.selected_group, sizing);
+      this.selected_group.size = [sizing.width, sizing.height];
+      desiredHeight = sizing.height;
       if (!isGroupCollapsed(this.selected_group)) {
         var resizeGroupState = ensureGroupState(this.selected_group);
         var resizeBottomIndex = resizeGroupState.rows.length - 1;
@@ -2842,7 +3331,11 @@
       updateLayout(this.selected_group, false);
       this.dirty_canvas = true;
       this.dirty_bgcanvas = true;
+    } else if (this.__smartGridAlignmentMode === "resize" && this.__smartGridAlignmentState) {
+      clearAlignmentState(this);
+      this.dirty_bgcanvas = true;
     }
+    applyGroupAlignmentDuringDrag(this, event);
 
     var isBusyDragging =
       !!this.node_dragged || !!this.resizing_node || !!this.dragging_canvas || !!this.dragging_rectangle;
@@ -2933,6 +3426,8 @@
     var rowDividerDrag = this.__smartGridRowDividerDrag;
     if (rowDividerDrag) {
       this.__smartGridRowDividerDrag = null;
+      clearAlignmentState(this);
+      this.__smartGridGroupDrag = null;
       if (rowDividerDrag.group && rowDividerDrag.group.__isSmartGrid) {
         updateLayout(rowDividerDrag.group, false);
       }
@@ -2946,6 +3441,8 @@
     var splitterDrag = this.__smartGridSplitterDrag;
     if (splitterDrag) {
       this.__smartGridSplitterDrag = null;
+      clearAlignmentState(this);
+      this.__smartGridGroupDrag = null;
       if (splitterDrag.group && splitterDrag.group.__isSmartGrid) {
         updateLayout(splitterDrag.group, true);
       }
@@ -3080,6 +3577,8 @@
       this.__smartGridCollapseHover = null;
       this.dirty_bgcanvas = true;
     }
+    clearAlignmentState(this);
+    this.__smartGridGroupDrag = null;
     this.__smartGridNodeDragSnapshot = null;
 
     return result;
@@ -3208,6 +3707,10 @@
         gridLineColor: gridSettings.gridLineColor,
         gridLineStyle: gridSettings.gridLineStyle,
         gridLineAlpha: gridSettings.gridLineAlpha,
+        alignmentHintEnabled: !!gridSettings.alignmentHintEnabled,
+        alignmentSnapEnabled: !!gridSettings.alignmentSnapEnabled,
+        alignmentThresholdPx: gridSettings.alignmentThresholdPx,
+        edgeToEdgeSnapGapPx: gridSettings.edgeToEdgeSnapGapPx,
       };
     },
     setLayoutSettings: function (partialSettings) {
