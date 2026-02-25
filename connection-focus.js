@@ -34,7 +34,15 @@
   var defaultSettings = {
     pulseColor: "#ff00ae",
     connectorStubLength: 34,
+    connectorStyle: "hybrid",
   };
+
+  function normalizeConnectorStyle(styleValue) {
+    if (styleValue === "straight" || styleValue === "hybrid" || styleValue === "angled") {
+      return styleValue;
+    }
+    return defaultSettings.connectorStyle;
+  }
 
   function getFocusSettings() {
     if (!window.ConnectionFocusSettings || typeof window.ConnectionFocusSettings !== "object") {
@@ -48,6 +56,7 @@
       settings.connectorStubLength = defaultSettings.connectorStubLength;
     }
     settings.connectorStubLength = Math.max(10, Math.min(80, settings.connectorStubLength));
+    settings.connectorStyle = normalizeConnectorStyle(settings.connectorStyle);
     return settings;
   }
 
@@ -133,8 +142,22 @@
     }
   }
 
+  function getCanvasForSettingsRedraw() {
+    if (focusState.activeCanvas) {
+      return focusState.activeCanvas;
+    }
+    if (window.__demoCanvas) {
+      return window.__demoCanvas;
+    }
+    if (window.LGraphCanvas && window.LGraphCanvas.active_canvas) {
+      return window.LGraphCanvas.active_canvas;
+    }
+    return null;
+  }
+
   window.setConnectionFocusSettings = function (partialSettings) {
     var settings = getFocusSettings();
+    var styleChanged = false;
     if (partialSettings && typeof partialSettings === "object") {
       if (typeof partialSettings.pulseColor === "string" && partialSettings.pulseColor.trim()) {
         settings.pulseColor = partialSettings.pulseColor.trim();
@@ -142,11 +165,23 @@
       if (typeof partialSettings.connectorStubLength === "number" && isFinite(partialSettings.connectorStubLength)) {
         settings.connectorStubLength = Math.max(10, Math.min(80, partialSettings.connectorStubLength));
       }
+      if (typeof partialSettings.connectorStyle === "string") {
+        var normalizedStyle = normalizeConnectorStyle(partialSettings.connectorStyle);
+        styleChanged = normalizedStyle !== settings.connectorStyle;
+        settings.connectorStyle = normalizedStyle;
+      }
     }
-    markCanvasDirty(focusState.activeCanvas);
+    // Keep pulse animation alive when changing connector style mid-focus.
+    if (styleChanged && focusState.isHolding && focusState.activeCanvas && focusState.activeNodeId != null) {
+      focusState.animationTime = window.performance ? window.performance.now() : Date.now();
+      stopAnimationLoop();
+      startAnimationLoop();
+    }
+    markCanvasDirty(getCanvasForSettingsRedraw());
     return {
       pulseColor: settings.pulseColor,
       connectorStubLength: settings.connectorStubLength,
+      connectorStyle: settings.connectorStyle,
     };
   };
 
@@ -164,6 +199,26 @@
         pulseColor: input.value,
       });
     });
+  }
+
+  function setupDebugConnectorStyleSelector() {
+    var select = document.getElementById("focus-connector-style");
+    if (!select) {
+      return;
+    }
+
+    var settings = getFocusSettings();
+    select.value = settings.connectorStyle;
+
+    function applyStyleSelection() {
+      window.setConnectionFocusSettings({
+        connectorStyle: select.value,
+      });
+    }
+
+    // Some browsers commit <select> changes on blur; listen to both so HUD updates apply immediately.
+    select.addEventListener("input", applyStyleSelection);
+    select.addEventListener("change", applyStyleSelection);
   }
 
   function ensureFocusVersionStamp() {
@@ -188,11 +243,20 @@
     if (!event) {
       return false;
     }
+    if (event.isPrimary === false) {
+      return false;
+    }
     if (event.button === 0) {
       return true;
     }
+    if (typeof event.which === "number") {
+      return event.which === 1;
+    }
     if (typeof event.buttons === "number") {
       return (event.buttons & 1) === 1;
+    }
+    if (typeof event.type === "string" && (event.type === "mousedown" || event.type === "pointerdown")) {
+      return true;
     }
     return false;
   }
@@ -323,7 +387,7 @@
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    drawHardAnglePath(ctx, ax, ay, bx, by, stub);
+    drawConfiguredPath(ctx, ax, ay, bx, by, stub, settings.connectorStyle);
     ctx.stroke();
     ctx.restore();
   }
@@ -381,28 +445,83 @@
     ctx.save();
     ctx.lineJoin = "miter";
     ctx.lineCap = "round";
-    drawHardAnglePath(ctx, ax, ay, bx, by, stub);
+    drawConfiguredPath(ctx, ax, ay, bx, by, stub, settings.connectorStyle);
     ctx.stroke();
     ctx.restore();
   }
 
-  function drawHardAnglePath(ctx, ax, ay, bx, by, stub) {
+  function drawConfiguredPath(ctx, ax, ay, bx, by, stub, style) {
+    if (style === "straight") {
+      drawStraightPath(ctx, ax, ay, bx, by, stub);
+      return;
+    }
+    if (style === "angled") {
+      drawAngledPath(ctx, ax, ay, bx, by, stub);
+      return;
+    }
+    drawHybridPath(ctx, ax, ay, bx, by, stub);
+  }
+
+  function drawStraightPath(ctx, ax, ay, bx, by, stub) {
     // Keep endpoint stubs fixed relative to sockets for predictable tracing.
     var startX = ax + stub;
     var endX = bx - stub;
     var needsDetour = endX <= startX + 8;
     var laneX = Math.max(startX, endX) + stub;
+    var midX = (startX + endX) * 0.5;
 
     ctx.beginPath();
     ctx.moveTo(ax, ay);
     ctx.lineTo(startX, ay);
     if (needsDetour) {
-      // When nodes cross, route through a fixed outer lane so links stay visible.
       ctx.lineTo(laneX, ay);
       ctx.lineTo(laneX, by);
-      ctx.lineTo(endX, by);
     } else {
+      ctx.lineTo(midX, ay);
+      ctx.lineTo(midX, by);
+    }
+    ctx.lineTo(endX, by);
+    ctx.lineTo(bx, by);
+  }
+
+  function drawAngledPath(ctx, ax, ay, bx, by, stub) {
+    // Slanted center segment while keeping fixed endpoint stubs for traceability.
+    var startX = ax + stub;
+    var endX = bx - stub;
+    var needsDetour = endX <= startX + 8;
+    var laneX = Math.max(startX, endX) + stub;
+    var midX = (startX + endX) * 0.5;
+
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(startX, ay);
+    if (needsDetour) {
+      ctx.lineTo(laneX, ay);
+      ctx.lineTo(laneX, by);
+    } else {
+      ctx.lineTo(midX, (ay + by) * 0.5);
       ctx.lineTo(endX, by);
+    }
+    ctx.lineTo(bx, by);
+  }
+
+  function drawHybridPath(ctx, ax, ay, bx, by, stub) {
+    // Keep endpoint stubs fixed relative to sockets for predictable tracing.
+    var startX = ax + stub;
+    var endX = bx - stub;
+    var needsDetour = endX <= startX + 8;
+    var laneX = Math.max(startX, endX) + stub;
+    var dx = Math.max(20, Math.min(140, Math.abs(endX - startX) * 0.5));
+
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(startX, ay);
+    if (needsDetour) {
+      // Keep crossed links visible by curving through a fixed outer lane.
+      ctx.bezierCurveTo(laneX, ay, laneX, by, endX, by);
+    } else {
+      // Hybrid shape: straight stubs with a LiteGraph-like curved middle segment.
+      ctx.bezierCurveTo(startX + dx, ay, endX - dx, by, endX, by);
     }
     ctx.lineTo(bx, by);
   }
@@ -500,18 +619,32 @@
   }
 
   window.LGraphCanvas.prototype.processMouseDown = function (event) {
-    if (isLeftPointer(event)) {
-      var node = getNodeAtEvent(this, event);
-      if (node && node.id != null) {
-        setFocusState(this, node.id);
-      } else {
-        clearFocusState();
+    var isLeft = isLeftPointer(event);
+    var nodeBefore = isLeft ? getNodeAtEvent(this, event) : null;
+    var result = originalProcessMouseDown.apply(this, arguments);
+
+    if (!isLeft) {
+      clearFocusState();
+      return result;
+    }
+
+    var node = nodeBefore || getNodeAtEvent(this, event) || this.node_over || null;
+    if (!node && this.selected_nodes) {
+      for (var nodeId in this.selected_nodes) {
+        if (Object.prototype.hasOwnProperty.call(this.selected_nodes, nodeId)) {
+          node = this.selected_nodes[nodeId];
+          break;
+        }
       }
+    }
+
+    if (node && node.id != null) {
+      setFocusState(this, node.id);
     } else {
       clearFocusState();
     }
 
-    return originalProcessMouseDown.apply(this, arguments);
+    return result;
   };
 
   window.LGraphCanvas.prototype.processMouseUp = function () {
@@ -551,10 +684,12 @@
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () {
       setupDebugColorPicker();
+      setupDebugConnectorStyleSelector();
       ensureFocusVersionStamp();
     });
   } else {
     setupDebugColorPicker();
+    setupDebugConnectorStyleSelector();
     ensureFocusVersionStamp();
   }
 
