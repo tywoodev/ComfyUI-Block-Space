@@ -26,6 +26,7 @@
     nodeVerticalGap: 40,
     borderJunctionGap: 6,
     gridLineWidth: 2,
+    gridLineColor: "#ffffff",
     gridLineAlpha: 0.32,
   };
   var gridSettings = {
@@ -35,6 +36,7 @@
     nodeVerticalGap: DEFAULT_GRID_SETTINGS.nodeVerticalGap,
     borderJunctionGap: DEFAULT_GRID_SETTINGS.borderJunctionGap,
     gridLineWidth: DEFAULT_GRID_SETTINGS.gridLineWidth,
+    gridLineColor: DEFAULT_GRID_SETTINGS.gridLineColor,
     gridLineAlpha: DEFAULT_GRID_SETTINGS.gridLineAlpha,
   };
   var ROW_PADDING = gridSettings.rowPadding;
@@ -44,6 +46,7 @@
   var NODE_VERTICAL_GAP = gridSettings.nodeVerticalGap;
   var BORDER_JUNCTION_GAP = gridSettings.borderJunctionGap;
   var GRID_LINE_WIDTH = gridSettings.gridLineWidth;
+  var GRID_LINE_COLOR = gridSettings.gridLineColor;
   var GRID_LINE_ALPHA = gridSettings.gridLineAlpha;
 
   var originalOnGroupAdd = window.LGraphCanvas.onGroupAdd;
@@ -73,6 +76,41 @@
 
   function clampNumber(value, min, max) {
     return Math.max(min, Math.min(max, value));
+  }
+
+  function normalizeHexColor(value, fallback) {
+    if (typeof value !== "string") {
+      return fallback;
+    }
+    var trimmed = value.trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
+      return trimmed.toLowerCase();
+    }
+    if (/^#[0-9a-fA-F]{3}$/.test(trimmed)) {
+      return (
+        "#" +
+        trimmed.charAt(1) +
+        trimmed.charAt(1) +
+        trimmed.charAt(2) +
+        trimmed.charAt(2) +
+        trimmed.charAt(3) +
+        trimmed.charAt(3)
+      ).toLowerCase();
+    }
+    return fallback;
+  }
+
+  function parseHexColor(hex) {
+    return {
+      r: parseInt(hex.slice(1, 3), 16),
+      g: parseInt(hex.slice(3, 5), 16),
+      b: parseInt(hex.slice(5, 7), 16),
+    };
+  }
+
+  function buildRgba(hex, alpha) {
+    var rgb = parseHexColor(normalizeHexColor(hex, "#ffffff"));
+    return "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + "," + alpha + ")";
   }
 
   function applyGridSettings(partial, skipPersist) {
@@ -110,6 +148,10 @@
       1,
       5
     );
+    gridSettings.gridLineColor = normalizeHexColor(
+      partial.gridLineColor,
+      gridSettings.gridLineColor
+    );
     gridSettings.gridLineAlpha = clampNumber(
       toNumber(partial.gridLineAlpha, gridSettings.gridLineAlpha),
       0.1,
@@ -123,6 +165,7 @@
     NODE_VERTICAL_GAP = gridSettings.nodeVerticalGap;
     BORDER_JUNCTION_GAP = gridSettings.borderJunctionGap;
     GRID_LINE_WIDTH = gridSettings.gridLineWidth;
+    GRID_LINE_COLOR = gridSettings.gridLineColor;
     GRID_LINE_ALPHA = gridSettings.gridLineAlpha;
     if (window.SmartGrid) {
       window.SmartGrid.ROW_PADDING = ROW_PADDING;
@@ -405,6 +448,38 @@
     return null;
   }
 
+  function findRowDividerHit(canvas, canvasX, canvasY) {
+    if (!canvas || !canvas.graph) {
+      return null;
+    }
+    var groups = getSmartGroups(canvas.graph);
+    for (var g = groups.length - 1; g >= 0; g -= 1) {
+      var group = groups[g];
+      if (!group.isPointInside(canvasX, canvasY, 0, true)) {
+        continue;
+      }
+      var geometry = getGridGeometry(group);
+      var rows = geometry.rows;
+      // Inner horizontal dividers only (exclude bottom edge).
+      for (var r = 0; r < rows.length - 1; r += 1) {
+        var row = rows[r];
+        var splitY = row.y + row.height;
+        if (canvasX < row.x || canvasX > row.x + row.width) {
+          continue;
+        }
+        if (Math.abs(canvasY - splitY) <= SPLITTER_HITBOX) {
+          return {
+            group: group,
+            upperIndex: r,
+            lowerIndex: r + 1,
+            splitY: splitY,
+          };
+        }
+      }
+    }
+    return null;
+  }
+
   function getColumnHorizontalInsets(columnCount, colIndex) {
     var half = INNER_NODE_PADDING * 0.5;
     // Outer gutter is already provided by ROW_PADDING in getGroupInnerMetrics(),
@@ -612,37 +687,6 @@
           if (ids.indexOf(nodeId) !== -1) {
             return groups[g];
           }
-        }
-      }
-    }
-    return null;
-  }
-
-  function findRowDividerHit(canvas, canvasX, canvasY) {
-    if (!canvas || !canvas.graph) {
-      return null;
-    }
-    var groups = getSmartGroups(canvas.graph);
-    for (var g = groups.length - 1; g >= 0; g -= 1) {
-      var group = groups[g];
-      if (!group.isPointInside(canvasX, canvasY, 0, true)) {
-        continue;
-      }
-      var geometry = getGridGeometry(group);
-      var rows = geometry.rows;
-      for (var r = 0; r < rows.length - 1; r += 1) {
-        var row = rows[r];
-        var splitY = row.y + row.height;
-        if (canvasX < row.x || canvasX > row.x + row.width) {
-          continue;
-        }
-        if (Math.abs(canvasY - splitY) <= SPLITTER_HITBOX) {
-          return {
-            group: group,
-            upperIndex: r,
-            lowerIndex: r + 1,
-            splitY: splitY,
-          };
         }
       }
     }
@@ -1235,7 +1279,7 @@
     var hover = canvas.__smartGridHover;
 
     ctx.save();
-    ctx.strokeStyle = "rgba(255,255,255," + GRID_LINE_ALPHA + ")";
+    ctx.strokeStyle = buildRgba(GRID_LINE_COLOR, GRID_LINE_ALPHA);
     ctx.lineWidth = GRID_LINE_WIDTH;
 
     for (var r = 0; r < geometry.rows.length; r += 1) {
@@ -1377,7 +1421,17 @@
     var bottomPaddingInput = document.getElementById("smartgrid-bottom-padding");
     var nodeGapInput = document.getElementById("smartgrid-node-gap");
     var borderGapInput = document.getElementById("smartgrid-border-gap");
-    if (!rowPaddingInput || !topPaddingInput || !bottomPaddingInput || !nodeGapInput || !borderGapInput) {
+    var dividerWidthInput = document.getElementById("smartgrid-divider-width");
+    var dividerColorInput = document.getElementById("smartgrid-divider-color");
+    if (
+      !rowPaddingInput ||
+      !topPaddingInput ||
+      !bottomPaddingInput ||
+      !nodeGapInput ||
+      !borderGapInput ||
+      !dividerWidthInput ||
+      !dividerColorInput
+    ) {
       return false;
     }
     rowPaddingInput.value = String(Math.round(gridSettings.rowPadding));
@@ -1385,6 +1439,8 @@
     bottomPaddingInput.value = String(Math.round(gridSettings.rowBottomPadding));
     nodeGapInput.value = String(Math.round(gridSettings.nodeVerticalGap));
     borderGapInput.value = String(Math.round(gridSettings.borderJunctionGap));
+    dividerWidthInput.value = String(Math.round(gridSettings.gridLineWidth));
+    dividerColorInput.value = normalizeHexColor(gridSettings.gridLineColor, "#ffffff");
     return true;
   }
 
@@ -1394,7 +1450,17 @@
     var bottomPaddingInput = document.getElementById("smartgrid-bottom-padding");
     var nodeGapInput = document.getElementById("smartgrid-node-gap");
     var borderGapInput = document.getElementById("smartgrid-border-gap");
-    if (!rowPaddingInput || !topPaddingInput || !bottomPaddingInput || !nodeGapInput || !borderGapInput) {
+    var dividerWidthInput = document.getElementById("smartgrid-divider-width");
+    var dividerColorInput = document.getElementById("smartgrid-divider-color");
+    if (
+      !rowPaddingInput ||
+      !topPaddingInput ||
+      !bottomPaddingInput ||
+      !nodeGapInput ||
+      !borderGapInput ||
+      !dividerWidthInput ||
+      !dividerColorInput
+    ) {
       return false;
     }
 
@@ -1410,6 +1476,8 @@
         rowBottomPadding: bottomPaddingInput.value,
         nodeVerticalGap: nodeGapInput.value,
         borderJunctionGap: borderGapInput.value,
+        gridLineWidth: dividerWidthInput.value,
+        gridLineColor: dividerColorInput.value,
       });
       var activeCanvas = window.LGraphCanvas.active_canvas;
       if (activeCanvas && activeCanvas.graph) {
@@ -1425,16 +1493,22 @@
     bottomPaddingInput.addEventListener("input", applyFromHud);
     nodeGapInput.addEventListener("input", applyFromHud);
     borderGapInput.addEventListener("input", applyFromHud);
+    dividerWidthInput.addEventListener("input", applyFromHud);
+    dividerColorInput.addEventListener("input", applyFromHud);
     rowPaddingInput.addEventListener("change", applyFromHud);
     topPaddingInput.addEventListener("change", applyFromHud);
     bottomPaddingInput.addEventListener("change", applyFromHud);
     nodeGapInput.addEventListener("change", applyFromHud);
     borderGapInput.addEventListener("change", applyFromHud);
+    dividerWidthInput.addEventListener("change", applyFromHud);
+    dividerColorInput.addEventListener("change", applyFromHud);
     rowPaddingInput.__smartGridBound = true;
     topPaddingInput.__smartGridBound = true;
     bottomPaddingInput.__smartGridBound = true;
     nodeGapInput.__smartGridBound = true;
     borderGapInput.__smartGridBound = true;
+    dividerWidthInput.__smartGridBound = true;
+    dividerColorInput.__smartGridBound = true;
     syncHudWithGridSettings();
     return true;
   }
@@ -1669,6 +1743,15 @@
       this.selected_group.__smartGridResizeStartHeight = this.selected_group.size
         ? this.selected_group.size[1]
         : 0;
+      var resizeState = ensureGroupState(this.selected_group);
+      var bottomIndex = resizeState.rows.length - 1;
+      if (bottomIndex >= 0) {
+        var bottomRow = resizeState.rows[bottomIndex];
+        var bottomHeight = Math.max(MIN_ROW_HEIGHT, Number(bottomRow.heightPx) || MIN_ROW_HEIGHT);
+        this.selected_group.__smartGridResizeStartBottomRowHeight = bottomHeight;
+      } else {
+        this.selected_group.__smartGridResizeStartBottomRowHeight = 0;
+      }
     }
     if (isLeftButton && clickedNode && clickedNode.id != null) {
       this.__smartGridNodeDragSnapshot = {
@@ -1706,16 +1789,14 @@
 
       var rowState = ensureGroupState(rowGroup);
       var upperRow = rowState.rows[rowDividerDrag.upperIndex];
-      var lowerRow = rowState.rows[rowDividerDrag.lowerIndex];
-      if (!upperRow || !lowerRow) {
+      if (!upperRow) {
         this.__smartGridRowDividerDrag = null;
         return true;
       }
 
       var rowGeometry = getGridGeometry(rowGroup);
       var upperRect = rowGeometry.rows[rowDividerDrag.upperIndex];
-      var lowerRect = rowGeometry.rows[rowDividerDrag.lowerIndex];
-      if (!upperRect || !lowerRect) {
+      if (!upperRect) {
         return true;
       }
 
@@ -1723,9 +1804,9 @@
       var minUpper = getRowRequiredHeightPx(rowGroup, rowDividerDrag.upperIndex);
       var rawUpper = event.canvasY - pairTop;
       var snappedUpper = roundToSnapPixels(rawUpper);
-      // Divider drag controls the row above only. The row below keeps its own height.
       var nextUpper = Math.max(minUpper, snappedUpper);
 
+      // Inner horizontal divider controls the row above it.
       upperRow.__manualHeightPx = nextUpper;
       upperRow.heightPx = nextUpper;
 
@@ -1820,10 +1901,24 @@
     // Keep SmartGrid children responsive while the group bounding box is resized.
     if (this.selected_group_resizing && this.selected_group && this.selected_group.__isSmartGrid) {
       var minResizeWidth = getGroupMinWidthPx(this.selected_group);
+      var desiredHeight = Math.max(80, roundToSnapPixels(this.selected_group.size[1]));
       this.selected_group.size = [
         Math.max(minResizeWidth, roundToSnapPixels(this.selected_group.size[0])),
-        this.selected_group.__smartGridResizeStartHeight || this.selected_group.size[1],
+        desiredHeight,
       ];
+      var resizeGroupState = ensureGroupState(this.selected_group);
+      var resizeBottomIndex = resizeGroupState.rows.length - 1;
+      if (resizeBottomIndex >= 0) {
+        var resizeBottomRow = resizeGroupState.rows[resizeBottomIndex];
+        var startGroupHeight = this.selected_group.__smartGridResizeStartHeight || desiredHeight;
+        var startBottomHeight = this.selected_group.__smartGridResizeStartBottomRowHeight
+          || Math.max(MIN_ROW_HEIGHT, Number(resizeBottomRow.heightPx) || MIN_ROW_HEIGHT);
+        var minBottomHeight = getRowRequiredHeightPx(this.selected_group, resizeBottomIndex);
+        var bottomDelta = desiredHeight - startGroupHeight;
+        var nextBottomHeight = Math.max(minBottomHeight, startBottomHeight + bottomDelta);
+        resizeBottomRow.__manualHeightPx = nextBottomHeight;
+        resizeBottomRow.heightPx = nextBottomHeight;
+      }
       updateLayout(this.selected_group, false);
       this.dirty_canvas = true;
       this.dirty_bgcanvas = true;
@@ -1892,8 +1987,6 @@
     if (rowDividerDrag) {
       this.__smartGridRowDividerDrag = null;
       if (rowDividerDrag.group && rowDividerDrag.group.__isSmartGrid) {
-        // Row divider resizing should only resize the SmartGrid itself,
-        // not push unrelated nodes/groups below it.
         updateLayout(rowDividerDrag.group, false);
       }
       this.selected_group = rowDividerDrag.previousSelectedGroup || null;
@@ -1928,10 +2021,11 @@
       var minGroupWidth = getGroupMinWidthPx(resizedGroup);
       resizedGroup.size = [
         Math.max(minGroupWidth, roundToSnapPixels(resizedGroup.size[0])),
-        resizedGroup.__smartGridResizeStartHeight || resizedGroup.size[1],
+        Math.max(80, roundToSnapPixels(resizedGroup.size[1])),
       ];
       updateLayout(resizedGroup, false);
       resizedGroup.__smartGridResizeStartHeight = 0;
+      resizedGroup.__smartGridResizeStartBottomRowHeight = 0;
     }
 
     if (draggedNode) {
@@ -1984,6 +2078,13 @@
 
             targetCol.childNodeIds = [draggedNode.id];
             addUniqueGroup(impactedGroups, hit.group);
+            var targetState = ensureGroupState(hit.group);
+            var targetRow = targetState.rows[hit.rowIndex];
+            if (targetRow) {
+              // Preserve current row height on this docking pass so shorter drops do not shrink the row,
+              // while taller drops can still expand it via computed content bounds.
+              targetRow.__preserveHeightOnNextDock = true;
+            }
 
             // Dropping into a column should only reflow the grid internals.
             // Avoid pushing unrelated free nodes/groups during ordinary drops.
@@ -2097,6 +2198,7 @@
         nodeVerticalGap: gridSettings.nodeVerticalGap,
         borderJunctionGap: gridSettings.borderJunctionGap,
         gridLineWidth: gridSettings.gridLineWidth,
+        gridLineColor: gridSettings.gridLineColor,
         gridLineAlpha: gridSettings.gridLineAlpha,
       };
     },
