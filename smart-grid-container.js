@@ -478,6 +478,14 @@
     return Math.max(min, Math.min(max, value));
   }
 
+  function getSafeNodeAxis(value, fallback) {
+    var numeric = Number(value);
+    if (!isFinite(numeric)) {
+      return fallback;
+    }
+    return numeric;
+  }
+
   function roundToSnapPercent(value) {
     return Math.round(value / SNAP_INCREMENT) * SNAP_INCREMENT;
   }
@@ -636,13 +644,15 @@
     var boundedMinWidth = Math.max(minWidth, columnWidth);
     var boundedMaxWidth = boundedMinWidth;
     // For single-node rows, allow shrinking back down to intrinsic min height.
-    var boundedMinHeight = (singleNodeColumn && !singleNodeRow)
-      ? Math.max(minHeight, rowHeight)
-      : minHeight;
+    var boundedMinHeight = minHeight;
+    if (singleNodeColumn && !singleNodeRow) {
+      boundedMinHeight = Math.max(minHeight, rowHeight);
+    }
     // If this row has exactly one node, allow vertical resizing to drive row height.
-    var boundedMaxHeight = singleNodeRow
-      ? Number.POSITIVE_INFINITY
-      : (singleNodeColumn ? boundedMinHeight : Number.POSITIVE_INFINITY);
+    var boundedMaxHeight = Number.POSITIVE_INFINITY;
+    if (!singleNodeRow && singleNodeColumn) {
+      boundedMaxHeight = boundedMinHeight;
+    }
 
     return {
       minWidth: boundedMinWidth,
@@ -754,6 +764,15 @@
     return row.columns[colIndex];
   }
 
+  function addUniqueGroup(list, group) {
+    if (!list || !group) {
+      return;
+    }
+    if (list.indexOf(group) === -1) {
+      list.push(group);
+    }
+  }
+
   function removeNodeFromAllSmartColumns(graph, nodeId) {
     if (!graph || nodeId == null) {
       return [];
@@ -777,7 +796,6 @@
         }
       }
       if (groupChanged) {
-        pruneTrailingEmptyRows(state);
         affected.push(groups[g]);
       }
     }
@@ -791,20 +809,34 @@
   }
 
   function clampManagedNodeSize(node, width, height) {
+    var FALLBACK_MIN = 10;
     if (!node) {
-      return [Math.max(10, Number(width) || 10), Math.max(10, Number(height) || 10)];
+      return [
+        Math.max(FALLBACK_MIN, getSafeNodeAxis(width, FALLBACK_MIN)),
+        Math.max(FALLBACK_MIN, getSafeNodeAxis(height, FALLBACK_MIN)),
+      ];
     }
+
     var bounds = getManagedNodeResizeBounds(node);
-    var minWidth = bounds
-      ? Math.max(10, Number(bounds.minWidth) || 10)
-      : Math.max(10, Number(getNodeIntrinsicMinSize(node)[0]) || 10);
-    var minHeight = bounds
-      ? Math.max(10, Number(bounds.minHeight) || 10)
-      : Math.max(10, Number(getNodeIntrinsicMinSize(node)[1]) || 10);
-    var maxWidth = bounds && isFinite(bounds.maxWidth) ? Math.max(minWidth, Number(bounds.maxWidth) || minWidth) : Number.POSITIVE_INFINITY;
-    var maxHeight = bounds && isFinite(bounds.maxHeight) ? Math.max(minHeight, Number(bounds.maxHeight) || minHeight) : Number.POSITIVE_INFINITY;
-    var safeWidth = Math.max(minWidth, Number(width) || minWidth);
-    var safeHeight = Math.max(minHeight, Number(height) || minHeight);
+    var intrinsicMin = getNodeIntrinsicMinSize(node);
+    var minWidth = Math.max(FALLBACK_MIN, getSafeNodeAxis(intrinsicMin[0], FALLBACK_MIN));
+    var minHeight = Math.max(FALLBACK_MIN, getSafeNodeAxis(intrinsicMin[1], FALLBACK_MIN));
+    var maxWidth = Number.POSITIVE_INFINITY;
+    var maxHeight = Number.POSITIVE_INFINITY;
+
+    if (bounds) {
+      minWidth = Math.max(FALLBACK_MIN, getSafeNodeAxis(bounds.minWidth, minWidth));
+      minHeight = Math.max(FALLBACK_MIN, getSafeNodeAxis(bounds.minHeight, minHeight));
+      if (isFinite(bounds.maxWidth)) {
+        maxWidth = Math.max(minWidth, getSafeNodeAxis(bounds.maxWidth, minWidth));
+      }
+      if (isFinite(bounds.maxHeight)) {
+        maxHeight = Math.max(minHeight, getSafeNodeAxis(bounds.maxHeight, minHeight));
+      }
+    }
+
+    var safeWidth = Math.max(minWidth, getSafeNodeAxis(width, minWidth));
+    var safeHeight = Math.max(minHeight, getSafeNodeAxis(height, minHeight));
     if (isFinite(maxWidth)) {
       safeWidth = Math.min(safeWidth, maxWidth);
     }
@@ -821,9 +853,12 @@
     var originalOnResize = typeof node.onResize === "function" ? node.onResize : null;
     node.onResize = function (size) {
       if (this.__smartGridManaged && !this.__smartGridLayoutSizing) {
-        var target = size && size.length >= 2
-          ? [Number(size[0]) || 0, Number(size[1]) || 0]
-          : (this.size && this.size.length >= 2 ? [this.size[0], this.size[1]] : [0, 0]);
+        var target = [0, 0];
+        if (size && size.length >= 2) {
+          target = [getSafeNodeAxis(size[0], 0), getSafeNodeAxis(size[1], 0)];
+        } else if (this.size && this.size.length >= 2) {
+          target = [getSafeNodeAxis(this.size[0], 0), getSafeNodeAxis(this.size[1], 0)];
+        }
         var clamped = clampManagedNodeSize(this, target[0], target[1]);
         if (!this.size || this.size.length < 2) {
           this.size = [clamped[0], clamped[1]];
@@ -864,6 +899,7 @@
       return false;
     }
     state.rows.splice(index, 1);
+    group.__smartGridPreserveHeightsOnNextLayout = true;
     updateLayout(group, true);
     group.setDirtyCanvas(true, true);
     return true;
@@ -927,6 +963,7 @@
     }
     group.__smartGridUpdatingLayout = true;
     var state = ensureGroupState(group);
+    var preserveRowHeights = !!group.__smartGridPreserveHeightsOnNextLayout;
     try {
       var oldHeight = group.size[1];
       var oldBottom = group.pos[1] + oldHeight;
@@ -975,6 +1012,28 @@
         var rowState = state.rows[rowIndex];
         normalizeRowFlexPercents(rowState);
         var rowColumns = rowState.columns || [];
+        var rowHasNodes = false;
+        for (var rowColIndex = 0; rowColIndex < rowColumns.length; rowColIndex += 1) {
+          if ((rowColumns[rowColIndex].childNodeIds || []).length > 0) {
+            rowHasNodes = true;
+            break;
+          }
+        }
+
+        if (preserveRowHeights) {
+          rowState.heightPx = Math.max(MIN_ROW_HEIGHT, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
+          contentBottom += rowState.heightPx;
+          continue;
+        }
+
+        if (!rowHasNodes) {
+          rowState.heightPx = Math.max(MIN_ROW_HEIGHT, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
+          // Preserve empty-row height so re-docking a shorter node does not cause abrupt spacing jumps.
+          rowState.__preserveHeightOnNextDock = true;
+          contentBottom += rowState.heightPx;
+          continue;
+        }
+
         var rowContentHeight = Math.max(24, MIN_ROW_HEIGHT - ROW_NODE_TOP_PADDING - ROW_NODE_BOTTOM_PADDING);
 
         for (var baselineCol = 0; baselineCol < rowColumns.length; baselineCol += 1) {
@@ -1001,12 +1060,21 @@
           }
         }
 
-        rowState.heightPx = Math.max(
+        var computedRowHeight = Math.max(
           MIN_ROW_HEIGHT,
           rowContentHeight + ROW_NODE_TOP_PADDING + ROW_NODE_BOTTOM_PADDING
         );
+        if (rowState.__preserveHeightOnNextDock) {
+          computedRowHeight = Math.max(computedRowHeight, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
+          rowState.__preserveHeightOnNextDock = false;
+        }
+        rowState.heightPx = computedRowHeight;
         contentBottom += rowState.heightPx;
       }
+
+      // Lock container height before placement so row geometry uses stable pixel heights.
+      var desiredHeight = Math.max(80, Math.round((contentBottom - group.pos[1]) + ROW_PADDING * 0.5));
+      group.size[1] = desiredHeight;
 
       // Row heights changed; refresh geometry before placement.
       geometry = getGridGeometry(group);
@@ -1080,7 +1148,7 @@
         }
       }
 
-      var newHeight = Math.max(80, Math.round((contentBottom - group.pos[1]) + ROW_PADDING * 0.5));
+      var newHeight = desiredHeight;
       group.size[1] = newHeight;
 
       var deltaY = newHeight - oldHeight;
@@ -1088,6 +1156,7 @@
         pushItemsBelow(group, deltaY, oldBottom);
       }
     } finally {
+      group.__smartGridPreserveHeightsOnNextLayout = false;
       group.__smartGridUpdatingLayout = false;
     }
   }
@@ -1743,43 +1812,49 @@
           var impactedGroups = [];
           var sourceGroup = findManagingGroupForNode(this.graph, draggedNode.id);
           var sourceLocation = sourceGroup ? findManagedNodeLocation(sourceGroup, draggedNode.id) : null;
+          var hasSourceCell = !!(sourceGroup && sourceLocation);
+          var sourceIsTargetCell =
+            hasSourceCell &&
+            sourceGroup === hit.group &&
+            sourceLocation.rowIndex === hit.rowIndex &&
+            sourceLocation.colIndex === hit.colIndex;
 
-          var previousGroups = removeNodeFromAllSmartColumns(this.graph, draggedNode.id);
-          impactedGroups = impactedGroups.concat(previousGroups);
+          // Occupied targets require a real source cell to swap with.
+          var canSwapIntoOccupiedTarget = occupyingNodeId == null || (hasSourceCell && !sourceIsTargetCell);
+          if (canSwapIntoOccupiedTarget) {
+            var previousGroups = removeNodeFromAllSmartColumns(this.graph, draggedNode.id);
+            impactedGroups = impactedGroups.concat(previousGroups);
 
-          // Enforce one node per cell; if occupied, swap occupant into dragged node's source cell.
-          if (occupyingNodeId != null) {
-            var occupyingGroups = removeNodeFromAllSmartColumns(this.graph, occupyingNodeId);
-            impactedGroups = impactedGroups.concat(occupyingGroups);
+            // Enforce one node per cell; if occupied, swap occupant into dragged node's source cell.
+            if (occupyingNodeId != null) {
+              var occupyingGroups = removeNodeFromAllSmartColumns(this.graph, occupyingNodeId);
+              impactedGroups = impactedGroups.concat(occupyingGroups);
 
-            if (sourceGroup && sourceLocation) {
-              var sourceCol = getColumnByIndex(sourceGroup, sourceLocation.rowIndex, sourceLocation.colIndex);
-              if (sourceCol) {
-                sourceCol.childNodeIds = [occupyingNodeId];
-                if (impactedGroups.indexOf(sourceGroup) === -1) {
-                  impactedGroups.push(sourceGroup);
+              if (hasSourceCell) {
+                var sourceCol = getColumnByIndex(sourceGroup, sourceLocation.rowIndex, sourceLocation.colIndex);
+                if (sourceCol) {
+                  sourceCol.childNodeIds = [occupyingNodeId];
+                  addUniqueGroup(impactedGroups, sourceGroup);
                 }
               }
             }
-          }
 
-          targetCol.childNodeIds = [draggedNode.id];
-          if (impactedGroups.indexOf(hit.group) === -1) {
-            impactedGroups.push(hit.group);
-          }
+            targetCol.childNodeIds = [draggedNode.id];
+            addUniqueGroup(impactedGroups, hit.group);
 
-          // Dropping into a column should only reflow the grid internals.
-          // Avoid pushing unrelated free nodes/groups during ordinary drops.
-          if (
-            dragSnapshot &&
-            dragSnapshot.positions &&
-            (dragSnapshot.primaryNodeId == null || dragSnapshot.primaryNodeId === draggedNode.id)
-          ) {
-            restoreSnapshotExcept(this.graph, dragSnapshot.positions, draggedNode.id);
-          }
-          for (var pg = 0; pg < impactedGroups.length; pg += 1) {
-            if (impactedGroups[pg]) {
-              updateLayout(impactedGroups[pg], false);
+            // Dropping into a column should only reflow the grid internals.
+            // Avoid pushing unrelated free nodes/groups during ordinary drops.
+            if (
+              dragSnapshot &&
+              dragSnapshot.positions &&
+              (dragSnapshot.primaryNodeId == null || dragSnapshot.primaryNodeId === draggedNode.id)
+            ) {
+              restoreSnapshotExcept(this.graph, dragSnapshot.positions, draggedNode.id);
+            }
+            for (var pg = 0; pg < impactedGroups.length; pg += 1) {
+              if (impactedGroups[pg]) {
+                updateLayout(impactedGroups[pg], false);
+              }
             }
           }
         }
