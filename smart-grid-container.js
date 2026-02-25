@@ -452,6 +452,37 @@
     return Math.max(20, maxWidth + insets.total);
   }
 
+  function getRowRequiredHeightPx(group, rowIndex) {
+    var state = ensureGroupState(group);
+    var row = state.rows[rowIndex];
+    if (!row || !Array.isArray(row.columns)) {
+      return MIN_ROW_HEIGHT;
+    }
+    var rowContentHeight = Math.max(24, MIN_ROW_HEIGHT - ROW_NODE_TOP_PADDING - ROW_NODE_BOTTOM_PADDING);
+    for (var c = 0; c < row.columns.length; c += 1) {
+      var ids = row.columns[c].childNodeIds || [];
+      for (var i = 0; i < ids.length; i += 1) {
+        var node = getNodeById(group.graph, ids[i]);
+        if (!node) {
+          continue;
+        }
+        var minSize = getNodeIntrinsicMinSize(node);
+        var minHeight = Math.max(0, Number(minSize[1]) || 0);
+        var manualHeight = node.__smartGridManualSize && node.__smartGridManualSize.length >= 2
+          ? Math.max(0, Number(node.__smartGridManualSize[1]) || 0)
+          : 0;
+        var requiredHeight = Math.max(minHeight, manualHeight);
+        if (requiredHeight > rowContentHeight) {
+          rowContentHeight = requiredHeight;
+        }
+      }
+    }
+    return Math.max(
+      MIN_ROW_HEIGHT,
+      rowContentHeight + ROW_NODE_TOP_PADDING + ROW_NODE_BOTTOM_PADDING
+    );
+  }
+
   function getGroupMinWidthPx(group) {
     var state = ensureGroupState(group);
     if (!state || !Array.isArray(state.rows) || !state.rows.length) {
@@ -581,6 +612,37 @@
           if (ids.indexOf(nodeId) !== -1) {
             return groups[g];
           }
+        }
+      }
+    }
+    return null;
+  }
+
+  function findRowDividerHit(canvas, canvasX, canvasY) {
+    if (!canvas || !canvas.graph) {
+      return null;
+    }
+    var groups = getSmartGroups(canvas.graph);
+    for (var g = groups.length - 1; g >= 0; g -= 1) {
+      var group = groups[g];
+      if (!group.isPointInside(canvasX, canvasY, 0, true)) {
+        continue;
+      }
+      var geometry = getGridGeometry(group);
+      var rows = geometry.rows;
+      for (var r = 0; r < rows.length - 1; r += 1) {
+        var row = rows[r];
+        var splitY = row.y + row.height;
+        if (canvasX < row.x || canvasX > row.x + row.width) {
+          continue;
+        }
+        if (Math.abs(canvasY - splitY) <= SPLITTER_HITBOX) {
+          return {
+            group: group,
+            upperIndex: r,
+            lowerIndex: r + 1,
+            splitY: splitY,
+          };
         }
       }
     }
@@ -1027,7 +1089,11 @@
         }
 
         if (!rowHasNodes) {
-          rowState.heightPx = Math.max(MIN_ROW_HEIGHT, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
+          var emptyBaseHeight = Math.max(MIN_ROW_HEIGHT, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
+          if (isFinite(Number(rowState.__manualHeightPx))) {
+            emptyBaseHeight = Math.max(emptyBaseHeight, Number(rowState.__manualHeightPx));
+          }
+          rowState.heightPx = emptyBaseHeight;
           // Preserve empty-row height so re-docking a shorter node does not cause abrupt spacing jumps.
           rowState.__preserveHeightOnNextDock = true;
           contentBottom += rowState.heightPx;
@@ -1050,10 +1116,7 @@
             var manualBaseline = baselineNode.__smartGridManualSize && baselineNode.__smartGridManualSize.length >= 2
               ? Math.max(0, Number(baselineNode.__smartGridManualSize[1]) || 0)
               : 0;
-            var currentBaseline = baselineNode.size && baselineNode.size.length >= 2
-              ? Math.max(0, Number(baselineNode.size[1]) || 0)
-              : 0;
-            var baselineHeight = Math.max(baselineMinHeight, manualBaseline, currentBaseline);
+            var baselineHeight = Math.max(baselineMinHeight, manualBaseline);
             if (baselineHeight > rowContentHeight) {
               rowContentHeight = baselineHeight;
             }
@@ -1067,6 +1130,9 @@
         if (rowState.__preserveHeightOnNextDock) {
           computedRowHeight = Math.max(computedRowHeight, Number(rowState.heightPx) || MIN_ROW_HEIGHT);
           rowState.__preserveHeightOnNextDock = false;
+        }
+        if (isFinite(Number(rowState.__manualHeightPx))) {
+          computedRowHeight = Math.max(computedRowHeight, Number(rowState.__manualHeightPx));
         }
         rowState.heightPx = computedRowHeight;
         contentBottom += rowState.heightPx;
@@ -1116,7 +1182,7 @@
             var currentWidth = node.size && node.size.length >= 1 ? Number(node.size[0]) || 0 : 0;
             // Width is always column-driven for managed nodes.
             var targetNodeWidth = Math.max(availableNodeWidth, minNodeWidth);
-            var targetNodeHeightBase = Math.max(minNodeHeight, manualHeight, currentHeight);
+            var targetNodeHeightBase = Math.max(minNodeHeight, manualHeight);
             var targetNodeHeight = shouldStretchColumn
               ? Math.max(targetNodeHeightBase, rowHeightTarget)
               : targetNodeHeightBase;
@@ -1555,6 +1621,19 @@
       clickedNode = this.graph.getNodeOnPos(event.canvasX, event.canvasY, this.visible_nodes);
     }
     if (isLeftButton) {
+      var rowHit = findRowDividerHit(this, event.canvasX, event.canvasY);
+      if (rowHit) {
+        this.__smartGridRowDividerDrag = {
+          group: rowHit.group,
+          upperIndex: rowHit.upperIndex,
+          lowerIndex: rowHit.lowerIndex,
+          previousSelectedGroup: this.selected_group || null,
+        };
+        this.selected_group_resizing = false;
+        this.dirty_canvas = true;
+        this.dirty_bgcanvas = true;
+        return true;
+      }
       var hit = findSplitterHit(this, event.canvasX, event.canvasY);
       if (hit) {
         this.__smartGridSplitterDrag = {
@@ -1615,6 +1694,48 @@
   window.LGraphCanvas.prototype.processMouseMove = function (event) {
     if (event && typeof this.adjustMouseEvent === "function") {
       this.adjustMouseEvent(event);
+    }
+
+    var rowDividerDrag = this.__smartGridRowDividerDrag;
+    if (rowDividerDrag) {
+      var rowGroup = rowDividerDrag.group;
+      if (!rowGroup || !rowGroup.__isSmartGrid) {
+        this.__smartGridRowDividerDrag = null;
+        return true;
+      }
+
+      var rowState = ensureGroupState(rowGroup);
+      var upperRow = rowState.rows[rowDividerDrag.upperIndex];
+      var lowerRow = rowState.rows[rowDividerDrag.lowerIndex];
+      if (!upperRow || !lowerRow) {
+        this.__smartGridRowDividerDrag = null;
+        return true;
+      }
+
+      var rowGeometry = getGridGeometry(rowGroup);
+      var upperRect = rowGeometry.rows[rowDividerDrag.upperIndex];
+      var lowerRect = rowGeometry.rows[rowDividerDrag.lowerIndex];
+      if (!upperRect || !lowerRect) {
+        return true;
+      }
+
+      var pairTop = upperRect.y;
+      var minUpper = getRowRequiredHeightPx(rowGroup, rowDividerDrag.upperIndex);
+      var rawUpper = event.canvasY - pairTop;
+      var snappedUpper = roundToSnapPixels(rawUpper);
+      // Divider drag controls the row above only. The row below keeps its own height.
+      var nextUpper = Math.max(minUpper, snappedUpper);
+
+      upperRow.__manualHeightPx = nextUpper;
+      upperRow.heightPx = nextUpper;
+
+      updateLayout(rowGroup, false);
+      this.dirty_canvas = true;
+      this.dirty_bgcanvas = true;
+      if (this.canvas && this.canvas.style) {
+        this.canvas.style.cursor = "row-resize";
+      }
+      return true;
     }
 
     var splitterDrag = this.__smartGridSplitterDrag;
@@ -1711,10 +1832,17 @@
     var isBusyDragging =
       !!this.node_dragged || !!this.resizing_node || !!this.dragging_canvas || !!this.dragging_rectangle;
     if (!isBusyDragging && event && typeof event.canvasX === "number" && typeof event.canvasY === "number") {
+      var rowDividerHoverHit = findRowDividerHit(this, event.canvasX, event.canvasY);
       var splitterHoverHit = findSplitterHit(this, event.canvasX, event.canvasY);
-      if (splitterHoverHit && this.canvas && this.canvas.style) {
+      if (rowDividerHoverHit && this.canvas && this.canvas.style) {
+        this.canvas.style.cursor = "row-resize";
+      } else if (splitterHoverHit && this.canvas && this.canvas.style) {
         this.canvas.style.cursor = "col-resize";
-      } else if (this.canvas && this.canvas.style && this.canvas.style.cursor === "col-resize") {
+      } else if (
+        this.canvas &&
+        this.canvas.style &&
+        (this.canvas.style.cursor === "col-resize" || this.canvas.style.cursor === "row-resize")
+      ) {
         this.canvas.style.cursor = "";
       }
     }
@@ -1758,6 +1886,21 @@
   window.LGraphCanvas.prototype.processMouseUp = function (event) {
     if (event && typeof this.adjustMouseEvent === "function") {
       this.adjustMouseEvent(event);
+    }
+
+    var rowDividerDrag = this.__smartGridRowDividerDrag;
+    if (rowDividerDrag) {
+      this.__smartGridRowDividerDrag = null;
+      if (rowDividerDrag.group && rowDividerDrag.group.__isSmartGrid) {
+        // Row divider resizing should only resize the SmartGrid itself,
+        // not push unrelated nodes/groups below it.
+        updateLayout(rowDividerDrag.group, false);
+      }
+      this.selected_group = rowDividerDrag.previousSelectedGroup || null;
+      this.selected_group_resizing = false;
+      this.dirty_canvas = true;
+      this.dirty_bgcanvas = true;
+      return true;
     }
 
     var splitterDrag = this.__smartGridSplitterDrag;
