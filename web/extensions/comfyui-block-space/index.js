@@ -1,6 +1,6 @@
 import { app } from "/scripts/app.js";
 
-const ASSET_VERSION = "2026-02-26-comfyui-node-snapping-phase-1-v6";
+const ASSET_VERSION = "2026-02-26-comfyui-node-snapping-phase-1-v7";
 
 const CONNECTOR_DEFAULTS = {
   flowColor: "#ff00ae",
@@ -23,7 +23,8 @@ const GRID_DEFAULTS = {
 };
 
 const NODE_SNAP_DEFAULTS = {
-  marginPx: 20,
+  hMarginPx: 20,
+  vMarginPx: 20,
   highlightEnabled: true,
   highlightColor: "#57b1ff",
   highlightWidth: 3,
@@ -91,6 +92,48 @@ function addSetting(definition) {
     settings.addSetting(definition);
   } catch (error) {
     // Ignore per-setting registration errors to keep other settings visible.
+  }
+}
+
+function hasSettingValue(id) {
+  const value = getSettingValue(id, null);
+  return value != null;
+}
+
+function setSettingValue(id, value) {
+  const settings = app && app.ui && app.ui.settings;
+  if (!settings) {
+    return false;
+  }
+  try {
+    if (typeof settings.setSettingValue === "function") {
+      settings.setSettingValue(id, value);
+      return true;
+    }
+  } catch (error) {
+    return false;
+  }
+  return false;
+}
+
+function migrateLegacyNodeSnapMargin() {
+  const legacyId = "comfyuiBlockSpace.nodeSnap.marginPx";
+  const hId = "comfyuiBlockSpace.nodeSnap.hMarginPx";
+  const vId = "comfyuiBlockSpace.nodeSnap.vMarginPx";
+
+  if (!hasSettingValue(legacyId)) {
+    return;
+  }
+
+  const legacyValue = asNumber(getSettingValue(legacyId, NODE_SNAP_DEFAULTS.hMarginPx), NODE_SNAP_DEFAULTS.hMarginPx);
+  const hasH = hasSettingValue(hId);
+  const hasV = hasSettingValue(vId);
+
+  if (!hasH) {
+    setSettingValue(hId, legacyValue);
+  }
+  if (!hasV) {
+    setSettingValue(vId, legacyValue);
   }
 }
 
@@ -210,9 +253,19 @@ function applyGridSettings() {
 function applyNodeSnapSettings() {
   if (window.BetterNodesSettings) {
     window.BetterNodesSettings.set("comfyuiBlockSpace.nodeSnap", {
-      marginPx: asNumber(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.marginPx", NODE_SNAP_DEFAULTS.marginPx),
-        NODE_SNAP_DEFAULTS.marginPx
+      hMarginPx: asNumber(
+        getSettingValue(
+          "comfyuiBlockSpace.nodeSnap.hMarginPx",
+          getSettingValue("comfyuiBlockSpace.nodeSnap.marginPx", NODE_SNAP_DEFAULTS.hMarginPx)
+        ),
+        NODE_SNAP_DEFAULTS.hMarginPx
+      ),
+      vMarginPx: asNumber(
+        getSettingValue(
+          "comfyuiBlockSpace.nodeSnap.vMarginPx",
+          getSettingValue("comfyuiBlockSpace.nodeSnap.marginPx", NODE_SNAP_DEFAULTS.vMarginPx)
+        ),
+        NODE_SNAP_DEFAULTS.vMarginPx
       ),
       highlightEnabled: asBool(
         getSettingValue("comfyuiBlockSpace.nodeSnap.highlightEnabled", NODE_SNAP_DEFAULTS.highlightEnabled),
@@ -345,10 +398,17 @@ function registerGridSettings() {
 
 function registerNodeSnapSettings() {
   addSetting({
-    id: "comfyuiBlockSpace.nodeSnap.marginPx",
-    name: "Block Space: Node Snap Margin",
+    id: "comfyuiBlockSpace.nodeSnap.hMarginPx",
+    name: "Block Space: H Snap Margin",
     type: "number",
-    defaultValue: NODE_SNAP_DEFAULTS.marginPx,
+    defaultValue: NODE_SNAP_DEFAULTS.hMarginPx,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.vMarginPx",
+    name: "Block Space: V Snap Margin",
+    type: "number",
+    defaultValue: NODE_SNAP_DEFAULTS.vMarginPx,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
@@ -396,6 +456,7 @@ app.registerExtension({
     registerConnectorSettings();
     registerGridSettings();
     registerNodeSnapSettings();
+    migrateLegacyNodeSnapMargin();
     applyConnectorSettings();
     applyGridSettings();
     applyNodeSnapSettings();

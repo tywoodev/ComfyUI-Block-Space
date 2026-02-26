@@ -9,7 +9,8 @@
   }
 
   var SNAP_THRESHOLD = 10;
-  var DEFAULT_SNAP_MARGIN = 20;
+  var DEFAULT_H_SNAP_MARGIN = 20;
+  var DEFAULT_V_SNAP_MARGIN = 20;
   var DEFAULT_HIGHLIGHT_ENABLED = true;
   var DEFAULT_HIGHLIGHT_COLOR = "#57b1ff";
   var WINNER_HIGHLIGHT_BG_FALLBACK = "#3a3f47";
@@ -53,12 +54,27 @@
     return fallback;
   }
 
-  function getSnapMargin() {
+  function getHSnapMargin() {
     return clampNumber(
-      getSettingValue("comfyuiBlockSpace.nodeSnap.marginPx", DEFAULT_SNAP_MARGIN),
+      getSettingValue(
+        "comfyuiBlockSpace.nodeSnap.hMarginPx",
+        getSettingValue("comfyuiBlockSpace.nodeSnap.marginPx", DEFAULT_H_SNAP_MARGIN)
+      ),
       0,
       500,
-      DEFAULT_SNAP_MARGIN
+      DEFAULT_H_SNAP_MARGIN
+    );
+  }
+
+  function getVSnapMargin() {
+    return clampNumber(
+      getSettingValue(
+        "comfyuiBlockSpace.nodeSnap.vMarginPx",
+        getSettingValue("comfyuiBlockSpace.nodeSnap.marginPx", DEFAULT_V_SNAP_MARGIN)
+      ),
+      0,
+      500,
+      DEFAULT_V_SNAP_MARGIN
     );
   }
 
@@ -147,11 +163,19 @@
     };
   }
 
-  function isYDominantDrag(delta) {
-    if (!delta) {
-      return false;
+  function resolveDragAxisLock(canvas, dragDelta) {
+    if (!canvas) {
+      return null;
     }
-    return Math.abs(delta.dy) > Math.abs(delta.dx);
+    if (canvas.__blockSpaceDragAxisLock) {
+      return canvas.__blockSpaceDragAxisLock;
+    }
+    if (!dragDelta || (dragDelta.dx === 0 && dragDelta.dy === 0)) {
+      return null;
+    }
+    canvas.__blockSpaceDragAxisLock =
+      Math.abs(dragDelta.dx) >= Math.abs(dragDelta.dy) ? "x" : "y";
+    return canvas.__blockSpaceDragAxisLock;
   }
 
   function rangesOverlap(aMin, aMax, bMin, bMax, tolerance) {
@@ -381,55 +405,63 @@
     if (!activeNode || activeNode.constructor === window.LGraphGroup) {
       clearSnapVisual(this);
       this.__blockSpacePrevDragPoint = null;
+      this.__blockSpaceDragAxisLock = null;
       return result;
     }
-    var dragDelta = getDragDelta(this, event);
+    getDragDelta(this, event);
 
     var activeBounds = getNodeBounds(activeNode);
     if (!activeBounds) {
       return result;
     }
 
-    var snapMargin = getSnapMargin();
-    var maxSearchDistance = snapMargin * 2;
+    var hSnapMargin = getHSnapMargin();
+    var vSnapMargin = getVSnapMargin();
+    var xSearchDistance = hSnapMargin * 2;
+    var ySearchDistance = vSnapMargin * 2;
     var thresholdCanvas = SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(this));
 
     var nodes = getGraphNodes(this);
     var didSnap = false;
 
-    var xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "x");
+    var xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, xSearchDistance, "x", "left", null);
     var xUseTopBottomFallback = false;
     if (!xWinner) {
-      xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "y", "above", "below");
+      xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, ySearchDistance, "y", "above", null);
       xUseTopBottomFallback = !!xWinner;
+      if (!xWinner) {
+        xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, ySearchDistance, "y", "below", null);
+        xUseTopBottomFallback = !!xWinner;
+      }
+      if (!xWinner) {
+        xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, xSearchDistance, "x", "right", null);
+      }
     }
     if (xWinner) {
       setWinnerHighlight(this, xWinner.node);
-      var xCandidate = computeWinningXCandidate(activeBounds, xWinner, snapMargin, xUseTopBottomFallback);
+      var xCandidate = computeWinningXCandidate(activeBounds, xWinner, hSnapMargin, xUseTopBottomFallback);
       if (xCandidate.delta <= thresholdCanvas) {
         activeNode.pos[0] = xCandidate.targetX;
         didSnap = true;
       }
     }
 
-    var yDominant = isYDominantDrag(dragDelta);
     var yWinner = null;
     var yUseTopFlushFallback = false;
-    if (yDominant) {
-      yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "y", "above", null);
+    yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, ySearchDistance, "y", "above", null);
+    if (!yWinner) {
+      yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, xSearchDistance, "x", "left", null);
       if (!yWinner) {
-        yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "x", "left", null);
-        if (!yWinner) {
-          yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "x", "right", null);
-        }
-        yUseTopFlushFallback = !!yWinner;
+        yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, xSearchDistance, "x", "right", null);
       }
-    } else {
-      yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "y");
+      yUseTopFlushFallback = !!yWinner;
+    }
+    if (!yWinner) {
+      yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, ySearchDistance, "y", "below", null);
     }
     if (yWinner) {
       setWinnerHighlight(this, yWinner.node);
-      var yCandidate = computeWinningYCandidate(activeBounds, yWinner, snapMargin, yUseTopFlushFallback);
+      var yCandidate = computeWinningYCandidate(activeBounds, yWinner, vSnapMargin, yUseTopFlushFallback);
       if (yCandidate.delta <= thresholdCanvas) {
         activeNode.pos[1] = yCandidate.targetY;
         didSnap = true;
@@ -451,6 +483,7 @@
     var result = originalProcessMouseUp.apply(this, arguments);
     clearSnapVisual(this);
     this.__blockSpacePrevDragPoint = null;
+    this.__blockSpaceDragAxisLock = null;
     return result;
   };
 
