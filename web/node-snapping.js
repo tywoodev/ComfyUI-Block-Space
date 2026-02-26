@@ -9,11 +9,16 @@
   }
 
   var SNAP_THRESHOLD = 10;
-  var DEFAULT_H_SNAP_MARGIN = 20;
-  var DEFAULT_V_SNAP_MARGIN = 20;
+  var DEFAULT_H_SNAP_MARGIN = 60;
+  var DEFAULT_V_SNAP_MARGIN = 60;
+  var DEFAULT_MOVE_SNAP_STRENGTH = 1.0;
+  var DEFAULT_RESIZE_SNAP_STRENGTH = 1.8;
   var DEFAULT_HIGHLIGHT_ENABLED = true;
   var DEFAULT_HIGHLIGHT_COLOR = "#57b1ff";
   var WINNER_HIGHLIGHT_BG_FALLBACK = "#3a3f47";
+  var DEBUG_RESIZE_SNAPPING = false;
+  var RESIZE_SEARCH_DISTANCE_MULTIPLIER = 4;
+  var DEBUG_HUD_ID = "block-space-resize-debug-hud";
 
   var originalProcessMouseMove = window.LGraphCanvas.prototype.processMouseMove;
   var originalProcessMouseUp = window.LGraphCanvas.prototype.processMouseUp;
@@ -75,6 +80,24 @@
       0,
       500,
       DEFAULT_V_SNAP_MARGIN
+    );
+  }
+
+  function getMoveSnapStrength() {
+    return clampNumber(
+      getSettingValue("comfyuiBlockSpace.nodeSnap.moveStrength", DEFAULT_MOVE_SNAP_STRENGTH),
+      0.1,
+      5,
+      DEFAULT_MOVE_SNAP_STRENGTH
+    );
+  }
+
+  function getResizeSnapStrength() {
+    return clampNumber(
+      getSettingValue("comfyuiBlockSpace.nodeSnap.resizeStrength", DEFAULT_RESIZE_SNAP_STRENGTH),
+      0.1,
+      5,
+      DEFAULT_RESIZE_SNAP_STRENGTH
     );
   }
 
@@ -183,7 +206,15 @@
     return Math.min(aMax, bMax) - Math.max(aMin, bMin) >= -tol;
   }
 
-  function collectValidTargetsForAxis(activeNode, activeBounds, allNodes, maxSearchDistance, axis, direction) {
+  function collectValidTargetsForAxis(
+    activeNode,
+    activeBounds,
+    allNodes,
+    maxSearchDistance,
+    axis,
+    direction,
+    ignoreMaxSearchDistance
+  ) {
     var valid = [];
     for (var i = 0; i < allNodes.length; i += 1) {
       var target = allNodes[i];
@@ -229,7 +260,7 @@
         }
       }
       // Must be an actual gap in-range; reject overlap/penetration.
-      if (!(emptySpace >= 0 && emptySpace <= maxSearchDistance)) {
+      if (!(emptySpace >= 0 && (ignoreMaxSearchDistance || emptySpace <= maxSearchDistance))) {
         continue;
       }
       valid.push({
@@ -243,17 +274,42 @@
     return valid;
   }
 
-  function chooseWinningTargetForAxis(activeNode, activeBounds, allNodes, maxSearchDistance, axis, primary, fallback) {
+  function chooseWinningTargetForAxis(
+    activeNode,
+    activeBounds,
+    allNodes,
+    maxSearchDistance,
+    axis,
+    primary,
+    fallback,
+    ignoreMaxSearchDistance
+  ) {
     if (primary == null) {
       primary = axis === "y" ? "above" : "left";
     }
     if (typeof fallback === "undefined") {
       fallback = axis === "y" ? "below" : "right";
     }
-    var valid = collectValidTargetsForAxis(activeNode, activeBounds, allNodes, maxSearchDistance, axis, primary);
+    var valid = collectValidTargetsForAxis(
+      activeNode,
+      activeBounds,
+      allNodes,
+      maxSearchDistance,
+      axis,
+      primary,
+      ignoreMaxSearchDistance
+    );
     if (!valid.length) {
       if (fallback) {
-        valid = collectValidTargetsForAxis(activeNode, activeBounds, allNodes, maxSearchDistance, axis, fallback);
+        valid = collectValidTargetsForAxis(
+          activeNode,
+          activeBounds,
+          allNodes,
+          maxSearchDistance,
+          axis,
+          fallback,
+          ignoreMaxSearchDistance
+        );
       }
     }
 
@@ -334,6 +390,278 @@
     };
   }
 
+  function getResizeDelta(canvas, node) {
+    if (!canvas || !node || !node.size || node.size.length < 2) {
+      return { dw: 0, dh: 0 };
+    }
+    var current = {
+      id: node.id != null ? node.id : null,
+      w: Number(node.size[0]) || 0,
+      h: Number(node.size[1]) || 0,
+    };
+    var prev = canvas.__blockSpacePrevResizeSize;
+    canvas.__blockSpacePrevResizeSize = current;
+    if (!prev || prev.id !== current.id) {
+      return { dw: 0, dh: 0 };
+    }
+    return {
+      dw: current.w - prev.w,
+      dh: current.h - prev.h,
+    };
+  }
+
+  function resolveResizeAxisLock(canvas, resizeDelta) {
+    if (!canvas) {
+      return "both";
+    }
+    if (canvas.__blockSpaceResizeAxisLock) {
+      return canvas.__blockSpaceResizeAxisLock;
+    }
+    if (!resizeDelta) {
+      return "both";
+    }
+    var absW = Math.abs(resizeDelta.dw);
+    var absH = Math.abs(resizeDelta.dh);
+    if (absW < 0.01 && absH < 0.01) {
+      return "both";
+    }
+    canvas.__blockSpaceResizeAxisLock = absW >= absH ? "x" : "y";
+    return canvas.__blockSpaceResizeAxisLock;
+  }
+
+  function getNodeMinSize(node) {
+    var minWidth = 10;
+    var minHeight = 10;
+    if (!node) {
+      return [minWidth, minHeight];
+    }
+
+    if (node.min_size && node.min_size.length >= 2) {
+      minWidth = Math.max(minWidth, Number(node.min_size[0]) || minWidth);
+      minHeight = Math.max(minHeight, Number(node.min_size[1]) || minHeight);
+    }
+
+    var hasSmartMin = false;
+    if (node.__smartMinSize && node.__smartMinSize.length >= 2) {
+      minWidth = Math.max(minWidth, Number(node.__smartMinSize[0]) || minWidth);
+      minHeight = Math.max(minHeight, Number(node.__smartMinSize[1]) || minHeight);
+      hasSmartMin = true;
+    }
+
+    // Avoid using computeSize when smart-sizing tracks user-resized size,
+    // otherwise minimums can become equal to current size and block shrink snaps.
+    if (!hasSmartMin && typeof node.computeSize === "function") {
+      try {
+        var computed = node.computeSize(node.size && node.size.length >= 1 ? node.size[0] : undefined);
+        if (computed && computed.length >= 2) {
+          minWidth = Math.max(minWidth, Number(computed[0]) || minWidth);
+          minHeight = Math.max(minHeight, Number(computed[1]) || minHeight);
+        }
+      } catch (error) {
+        // Ignore compute size failures and keep conservative fallback minimum.
+      }
+    }
+
+    return [minWidth, minHeight];
+  }
+
+  function computeWinningXResizeCandidate(activeBounds, winner, snapMargin, useTopBottomFallback) {
+    var winnerBounds = winner.bounds;
+    if (useTopBottomFallback) {
+      // For top/bottom fallback during resize, align right edge to right edge.
+      var fallbackTargetRight = winnerBounds.right;
+      return {
+        targetRight: fallbackTargetRight,
+        delta: Math.abs(activeBounds.right - fallbackTargetRight),
+        mode: "top_bottom_right_align",
+      };
+    }
+
+    var side = winner.direction || "left";
+    var marginTargetRight = side === "left" ? winnerBounds.right + snapMargin : winnerBounds.left - snapMargin;
+    var alignTargetRight = winnerBounds.left;
+    var marginDelta = Math.abs(activeBounds.right - marginTargetRight);
+    var alignDelta = Math.abs(activeBounds.right - alignTargetRight);
+
+    if (marginDelta <= alignDelta) {
+      return {
+        targetRight: marginTargetRight,
+        delta: marginDelta,
+        mode: "margin",
+      };
+    }
+    return {
+      targetRight: alignTargetRight,
+      delta: alignDelta,
+      mode: "right_align",
+    };
+  }
+
+  function computeWinningYResizeCandidate(activeBounds, winner, snapMargin, useTopFlushOnly) {
+    var winnerBounds = winner.bounds;
+    if (useTopFlushOnly) {
+      var flushTargetBottom = winnerBounds.top;
+      return {
+        targetBottom: flushTargetBottom,
+        delta: Math.abs(activeBounds.bottom - flushTargetBottom),
+        mode: "top_flush",
+      };
+    }
+
+    var direction = winner.direction || "above";
+    var marginTargetBottom = direction === "above" ? winnerBounds.bottom + snapMargin : winnerBounds.top - snapMargin;
+    var alignTargetBottom = winnerBounds.top;
+    var marginDelta = Math.abs(activeBounds.bottom - marginTargetBottom);
+    var alignDelta = Math.abs(activeBounds.bottom - alignTargetBottom);
+
+    if (marginDelta <= alignDelta) {
+      return {
+        targetBottom: marginTargetBottom,
+        delta: marginDelta,
+        mode: "margin",
+      };
+    }
+    return {
+      targetBottom: alignTargetBottom,
+      delta: alignDelta,
+      mode: "bottom_align",
+    };
+  }
+
+  function applyResizeSnapping(canvas, resizingNode, resizeAxisLock) {
+    if (
+      !canvas ||
+      !resizingNode ||
+      resizingNode.constructor === window.LGraphGroup ||
+      resizingNode.__smartGridManaged
+    ) {
+      return false;
+    }
+
+    var bounds = getNodeBounds(resizingNode);
+    if (!bounds) {
+      return false;
+    }
+    var xReferenceBounds = {
+      left: bounds.right,
+      right: bounds.right,
+      top: bounds.top,
+      bottom: bounds.bottom,
+      centerX: bounds.right,
+      centerY: bounds.centerY,
+    };
+    var yReferenceBounds = {
+      left: bounds.left,
+      right: bounds.right,
+      top: bounds.bottom,
+      bottom: bounds.bottom,
+      centerX: bounds.centerX,
+      centerY: bounds.bottom,
+    };
+
+    var hSnapMargin = getHSnapMargin();
+    var vSnapMargin = getVSnapMargin();
+    var xSearchDistance = hSnapMargin * RESIZE_SEARCH_DISTANCE_MULTIPLIER;
+    var ySearchDistance = vSnapMargin * RESIZE_SEARCH_DISTANCE_MULTIPLIER;
+    var thresholdCanvas =
+      (SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(canvas))) * getResizeSnapStrength();
+    var thresholdXCanvas = thresholdCanvas;
+    var nodes = getGraphNodes(canvas);
+    var didSnap = false;
+
+    var xWinner = chooseWinningTargetForAxis(
+      resizingNode,
+      xReferenceBounds,
+      nodes,
+      xSearchDistance,
+      "x",
+      "left",
+      null,
+      false
+    );
+    var xUseTopBottomFallback = false;
+    if (!xWinner) {
+      xWinner = chooseWinningTargetForAxis(
+        resizingNode,
+        bounds,
+        nodes,
+        ySearchDistance,
+        "y",
+        "above",
+        null,
+        true
+      );
+      xUseTopBottomFallback = !!xWinner;
+    }
+    if (!xWinner) {
+      xWinner = chooseWinningTargetForAxis(
+        resizingNode,
+        bounds,
+        nodes,
+        ySearchDistance,
+        "y",
+        "below",
+        null,
+        true
+      );
+      xUseTopBottomFallback = !!xWinner;
+    }
+    if (!xWinner) {
+      xWinner = chooseWinningTargetForAxis(
+        resizingNode,
+        xReferenceBounds,
+        nodes,
+        xSearchDistance,
+        "x",
+        "right",
+        null,
+        false
+      );
+    }
+    var xCandidate = xWinner
+      ? computeWinningXResizeCandidate(bounds, xWinner, hSnapMargin, xUseTopBottomFallback)
+      : null;
+
+    var minSize = getNodeMinSize(resizingNode);
+    // Y resize snapping is disabled; always allow X snapping regardless of resize axis lock.
+    var applyX = true;
+    var status = {
+      active: true,
+      node: resizingNode && (resizingNode.title || resizingNode.type || resizingNode.id),
+      axis: resizeAxisLock || "both",
+      xWinner: xWinner && xWinner.node ? (xWinner.node.title || xWinner.node.type || xWinner.node.id) : null,
+      xMode: xCandidate ? xCandidate.mode : null,
+      xDelta: xCandidate ? xCandidate.delta : null,
+      xThreshold: thresholdXCanvas,
+      xReference: bounds.right,
+      xTarget: xCandidate ? xCandidate.targetRight : null,
+      didSnap: false,
+    };
+
+    if (xWinner && applyX) {
+      if (xCandidate.delta <= thresholdXCanvas) {
+        var currentWidth = Number(resizingNode.size[0]) || 0;
+        var nextWidth = Math.max(minSize[0], xCandidate.targetRight - bounds.left);
+        status.xTarget = xCandidate.targetRight;
+        if (isFinite(nextWidth) && Math.abs(nextWidth - currentWidth) > 0.01) {
+          resizingNode.size[0] = nextWidth;
+          didSnap = true;
+          status.xReference = bounds.left + nextWidth;
+        }
+      }
+    }
+
+    // Y-axis resize snapping is intentionally disabled for now.
+    status.didSnap = didSnap;
+    canvas.__blockSpaceResizeDebugStatus = status;
+
+    if (didSnap) {
+      canvas.dirty_canvas = true;
+      canvas.dirty_bgcanvas = true;
+    }
+    return didSnap;
+  }
+
   function clearSnapVisual(canvas) {
     if (!canvas || !canvas.__blockSpaceWinnerHighlight) {
       return;
@@ -393,19 +721,99 @@
     clearSnapVisual(canvas);
   }
 
+  function ensureResizeDebugHud() {
+    var hud = document.getElementById(DEBUG_HUD_ID);
+    if (hud) {
+      return hud;
+    }
+    hud = document.createElement("div");
+    hud.id = DEBUG_HUD_ID;
+    hud.style.position = "fixed";
+    hud.style.top = "200px";
+    hud.style.left = "200px";
+    hud.style.zIndex = "9999";
+    hud.style.padding = "10px 12px";
+    hud.style.background = "rgba(10,12,16,0.85)";
+    hud.style.border = "1px solid rgba(120,170,255,0.35)";
+    hud.style.borderRadius = "8px";
+    hud.style.color = "#d6e8ff";
+    hud.style.font = "12px/1.4 monospace";
+    hud.style.whiteSpace = "pre-line";
+    hud.style.pointerEvents = "none";
+    hud.textContent = "Resize snap: idle";
+    document.body.appendChild(hud);
+    return hud;
+  }
+
+  function renderResizeDebugHud(canvas) {
+    var hud = ensureResizeDebugHud();
+    if (!hud) {
+      return;
+    }
+    var cursorX =
+      canvas && typeof canvas.__blockSpaceCursorX === "number"
+        ? Number(canvas.__blockSpaceCursorX).toFixed(2)
+        : "-";
+    var s = canvas && canvas.__blockSpaceResizeDebugStatus;
+    if (!s || !s.active) {
+      hud.textContent = "Resize snap: idle\nCursor X: " + cursorX;
+      return;
+    }
+    var delta = s.xDelta == null ? "-" : Number(s.xDelta).toFixed(2);
+    var threshold = s.xThreshold == null ? "-" : Number(s.xThreshold).toFixed(2);
+    var xRef = s.xReference == null ? "-" : Number(s.xReference).toFixed(2);
+    var xTarget = s.xTarget == null ? "-" : Number(s.xTarget).toFixed(2);
+    hud.textContent =
+      "Resize snap: active\n" +
+      "Cursor X: " + cursorX + "\n" +
+      "Node: " + (s.node || "-") + "\n" +
+      "Axis: " + (s.axis || "-") + "\n" +
+      "X ref: " + xRef + "\n" +
+      "X target: " + xTarget + "\n" +
+      "X winner: " + (s.xWinner || "none") + "\n" +
+      "Mode: " + (s.xMode || "-") + "\n" +
+      "Delta/Threshold: " + delta + " / " + threshold + "\n" +
+      "Did snap: " + (s.didSnap ? "true" : "false");
+  }
+
   window.LGraphCanvas.prototype.processMouseMove = function (event) {
     if (!this.__blockSpaceResetPersistedHighlightDone) {
       resetPersistedHighlightArtifacts(this);
       this.__blockSpaceResetPersistedHighlightDone = true;
     }
 
+    var resizingNodeBefore = this.resizing_node || null;
     var result = originalProcessMouseMove.apply(this, arguments);
+    if (event && typeof event.canvasX === "number") {
+      this.__blockSpaceCursorX = event.canvasX;
+    } else if (event && typeof event.clientX === "number") {
+      this.__blockSpaceCursorX = event.clientX;
+    }
+
+    var resizingNode = this.resizing_node || resizingNodeBefore;
+    if (
+      resizingNode &&
+      resizingNode.pos &&
+      resizingNode.size &&
+      !this.dragging_canvas
+    ) {
+      var resizeDelta = getResizeDelta(this, resizingNode);
+      var resizeAxisLock = resolveResizeAxisLock(this, resizeDelta);
+      applyResizeSnapping(this, resizingNode, resizeAxisLock);
+      renderResizeDebugHud(this);
+      return result;
+    }
+    this.__blockSpaceResizeDebugStatus = null;
+    renderResizeDebugHud(this);
+    this.__blockSpacePrevResizeSize = null;
+    this.__blockSpaceResizeAxisLock = null;
 
     var activeNode = getActiveDraggedNode(this, event);
     if (!activeNode || activeNode.constructor === window.LGraphGroup) {
       clearSnapVisual(this);
       this.__blockSpacePrevDragPoint = null;
       this.__blockSpaceDragAxisLock = null;
+      renderResizeDebugHud(this);
       return result;
     }
     getDragDelta(this, event);
@@ -419,7 +827,8 @@
     var vSnapMargin = getVSnapMargin();
     var xSearchDistance = hSnapMargin * 2;
     var ySearchDistance = vSnapMargin * 2;
-    var thresholdCanvas = SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(this));
+    var thresholdCanvas =
+      (SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(this))) * getMoveSnapStrength();
 
     var nodes = getGraphNodes(this);
     var didSnap = false;
@@ -475,6 +884,7 @@
       this.dirty_canvas = true;
       this.dirty_bgcanvas = true;
     }
+    renderResizeDebugHud(this);
 
     return result;
   };
@@ -484,6 +894,10 @@
     clearSnapVisual(this);
     this.__blockSpacePrevDragPoint = null;
     this.__blockSpaceDragAxisLock = null;
+    this.__blockSpacePrevResizeSize = null;
+    this.__blockSpaceResizeAxisLock = null;
+    this.__blockSpaceResizeDebugStatus = null;
+    renderResizeDebugHud(this);
     return result;
   };
 

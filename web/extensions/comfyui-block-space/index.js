@@ -1,6 +1,6 @@
 import { app } from "/scripts/app.js";
 
-const ASSET_VERSION = "2026-02-26-comfyui-node-snapping-phase-1-v7";
+const ASSET_VERSION = "2026-02-26-comfyui-node-snapping-phase-1-v25";
 
 const CONNECTOR_DEFAULTS = {
   flowColor: "#ff00ae",
@@ -23,8 +23,10 @@ const GRID_DEFAULTS = {
 };
 
 const NODE_SNAP_DEFAULTS = {
-  hMarginPx: 20,
-  vMarginPx: 20,
+  hMarginPx: 60,
+  vMarginPx: 60,
+  moveStrength: 1.0,
+  resizeStrength: 1.8,
   highlightEnabled: true,
   highlightColor: "#57b1ff",
   highlightWidth: 3,
@@ -267,6 +269,14 @@ function applyNodeSnapSettings() {
         ),
         NODE_SNAP_DEFAULTS.vMarginPx
       ),
+      moveStrength: asNumber(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.moveStrength", NODE_SNAP_DEFAULTS.moveStrength),
+        NODE_SNAP_DEFAULTS.moveStrength
+      ),
+      resizeStrength: asNumber(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.resizeStrength", NODE_SNAP_DEFAULTS.resizeStrength),
+        NODE_SNAP_DEFAULTS.resizeStrength
+      ),
       highlightEnabled: asBool(
         getSettingValue("comfyuiBlockSpace.nodeSnap.highlightEnabled", NODE_SNAP_DEFAULTS.highlightEnabled),
         NODE_SNAP_DEFAULTS.highlightEnabled
@@ -409,6 +419,20 @@ function registerNodeSnapSettings() {
     name: "Block Space: V Snap Margin",
     type: "number",
     defaultValue: NODE_SNAP_DEFAULTS.vMarginPx,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.moveStrength",
+    name: "Block Space: Move Snap Strength",
+    type: "number",
+    defaultValue: NODE_SNAP_DEFAULTS.moveStrength,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.resizeStrength",
+    name: "Block Space: Resize Snap Strength",
+    type: "number",
+    defaultValue: NODE_SNAP_DEFAULTS.resizeStrength,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
