@@ -81,6 +81,7 @@
   var MAX_COLLAPSED_TITLE_WIDTH = 280;
 
   var originalOnGroupAdd = window.LGraphCanvas.onGroupAdd;
+  var originalGetCanvasMenuOptions = window.LGraphCanvas.prototype.getCanvasMenuOptions;
   var originalGroupSerialize = window.LGraphGroup.prototype.serialize;
   var originalGroupConfigure = window.LGraphGroup.prototype.configure;
   var originalGroupRecomputeInsideNodes = window.LGraphGroup.prototype.recomputeInsideNodes;
@@ -101,6 +102,45 @@
   var originalNodeSetSize = window.LGraphNode && window.LGraphNode.prototype
     ? window.LGraphNode.prototype.setSize
     : null;
+
+  function resolveCanvasPos(canvas, mouse_event) {
+    if (mouse_event && typeof mouse_event.canvasX === "number" && typeof mouse_event.canvasY === "number") {
+      return [mouse_event.canvasX, mouse_event.canvasY];
+    }
+    if (canvas && typeof canvas.convertEventToCanvasOffset === "function" && mouse_event) {
+      return canvas.convertEventToCanvasOffset(mouse_event);
+    }
+    if (canvas && Array.isArray(canvas.graph_mouse) && canvas.graph_mouse.length >= 2) {
+      return [canvas.graph_mouse[0], canvas.graph_mouse[1]];
+    }
+    return [80, 80];
+  }
+
+  function createSmartGridGroupAtPos(graph, pos) {
+    if (!graph) {
+      return null;
+    }
+    var group = new window.LiteGraph.LGraphGroup();
+    group.pos = [
+      pos && pos.length > 0 ? Number(pos[0]) || 80 : 80,
+      pos && pos.length > 1 ? Number(pos[1]) || 80 : 80,
+    ];
+    graph.add(group);
+    ensureGroupState(group);
+    updateLayout(group, false);
+    if (typeof group.setDirtyCanvas === "function") {
+      group.setDirtyCanvas(true, true);
+    }
+    return group;
+  }
+
+  function createSmartGridGroupAtEvent(canvas, mouse_event) {
+    if (!canvas || !canvas.graph) {
+      return null;
+    }
+    return createSmartGridGroupAtPos(canvas.graph, resolveCanvasPos(canvas, mouse_event));
+  }
+
 
   function nextId(prefix) {
     return prefix + "_" + Math.floor(Math.random() * 1000000000);
@@ -155,6 +195,14 @@
   function buildRgba(hex, alpha) {
     var rgb = parseHexColor(normalizeHexColor(hex, "#ffffff"));
     return "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + "," + alpha + ")";
+  }
+
+  function isComfyUIRuntime() {
+    return !!(
+      window.BetterNodesSettings &&
+      typeof window.BetterNodesSettings.isComfyUIRuntime === "function" &&
+      window.BetterNodesSettings.isComfyUIRuntime()
+    );
   }
 
   function applyGridSettings(partial, skipPersist) {
@@ -806,7 +854,7 @@
       if (alignment.vertical) {
         sizing.width = Math.max(minWidth, sizing.width + alignment.vertical.delta);
       }
-      if (alignment.horizontal) {
+      if (alignment.horizontal && !sizing.lockHeight) {
         sizing.height = Math.max(minHeight, sizing.height + alignment.horizontal.delta);
       }
     }
@@ -1725,6 +1773,21 @@
     return Math.max(140, Math.ceil(requiredInnerWidth + ROW_PADDING * 2));
   }
 
+  function getGroupMinHeightPx(group) {
+    var state = ensureGroupState(group);
+    if (!state || !Array.isArray(state.rows) || !state.rows.length) {
+      return 80;
+    }
+    var totalRowsHeight = 0;
+    for (var r = 0; r < state.rows.length; r += 1) {
+      var row = state.rows[r];
+      var rowBase = Math.max(MIN_ROW_HEIGHT, Number(row && row.heightPx) || MIN_ROW_HEIGHT);
+      var rowRequired = getRowRequiredHeightPx(group, r);
+      totalRowsHeight += Math.max(rowBase, rowRequired);
+    }
+    return Math.max(80, Math.round(HEADER_HEIGHT + totalRowsHeight + ROW_PADDING * 0.5));
+  }
+
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
   }
@@ -2385,10 +2448,165 @@
         pushItemsBelow(group, deltaY, oldBottom);
       }
     } finally {
+      group.__smartGridLastLayoutSize = [group.size[0], group.size[1]];
       syncSmartGridGroupChildren(group);
       group.__smartGridPreserveHeightsOnNextLayout = false;
       group.__smartGridUpdatingLayout = false;
     }
+  }
+
+  function snapshotManagedNodePositions(group) {
+    var out = {};
+    var nodes = getManagedNodeRefs(group);
+    for (var i = 0; i < nodes.length; i += 1) {
+      var node = nodes[i];
+      if (!node || node.id == null || !node.pos) {
+        continue;
+      }
+      out[node.id] = [node.pos[0], node.pos[1]];
+    }
+    return out;
+  }
+
+  function syncManagedNodesWithGroupDrag(canvas) {
+    if (!canvas) {
+      return;
+    }
+    var drag = canvas.__smartGridManagedMoveDrag;
+    if (!drag || !drag.group || !drag.group.__isSmartGrid) {
+      return;
+    }
+    var group = drag.group;
+    if (canvas.selected_group !== group || canvas.selected_group_resizing || canvas.node_dragged || canvas.resizing_node) {
+      canvas.__smartGridManagedMoveDrag = null;
+      return;
+    }
+    if (!group.pos || group.pos.length < 2) {
+      return;
+    }
+    var gx = Number(group.pos[0]) || 0;
+    var gy = Number(group.pos[1]) || 0;
+    var dx = gx - (Number(drag.lastGroupPos[0]) || 0);
+    var dy = gy - (Number(drag.lastGroupPos[1]) || 0);
+    if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) {
+      return;
+    }
+
+    var nodes = getManagedNodeRefs(group);
+    var prev = drag.lastNodePositions || {};
+    var movedLikeGroup = 0;
+    var compared = 0;
+    for (var i = 0; i < nodes.length; i += 1) {
+      var node = nodes[i];
+      if (!node || node.id == null || !node.pos || !prev[node.id]) {
+        continue;
+      }
+      compared += 1;
+      var ndx = (Number(node.pos[0]) || 0) - (Number(prev[node.id][0]) || 0);
+      var ndy = (Number(node.pos[1]) || 0) - (Number(prev[node.id][1]) || 0);
+      if (Math.abs(ndx - dx) <= 0.5 && Math.abs(ndy - dy) <= 0.5) {
+        movedLikeGroup += 1;
+      }
+    }
+
+    // Fallback for runtimes where group drags do not propagate to children.
+    if (!(compared > 0 && movedLikeGroup === compared)) {
+      for (var n = 0; n < nodes.length; n += 1) {
+        var child = nodes[n];
+        if (!child || !child.pos) {
+          continue;
+        }
+        child.pos[0] += dx;
+        child.pos[1] += dy;
+      }
+    }
+
+    drag.lastGroupPos = [gx, gy];
+    drag.lastNodePositions = snapshotManagedNodePositions(group);
+  }
+
+  function refreshManagedMoveBaseline(canvas) {
+    if (!canvas || !canvas.__smartGridManagedMoveDrag) {
+      return;
+    }
+    var drag = canvas.__smartGridManagedMoveDrag;
+    var group = drag.group;
+    if (!group || !group.pos || group.pos.length < 2) {
+      return;
+    }
+    drag.lastGroupPos = [group.pos[0], group.pos[1]];
+    drag.lastNodePositions = snapshotManagedNodePositions(group);
+  }
+
+  function hasSmartGridExternalResize(group) {
+    if (!group || !group.size || group.size.length < 2) {
+      return false;
+    }
+    var last = group.__smartGridLastLayoutSize;
+    if (!last || last.length < 2) {
+      return true;
+    }
+    return (
+      Math.abs((Number(group.size[0]) || 0) - (Number(last[0]) || 0)) > 0.5 ||
+      Math.abs((Number(group.size[1]) || 0) - (Number(last[1]) || 0)) > 0.5
+    );
+  }
+
+  function enforceSmartGridMinBounds(group, canvas) {
+    if (!group || !group.__isSmartGrid || !group.size || group.size.length < 2) {
+      return false;
+    }
+    var nextWidth = group.size[0];
+    var nextHeight = group.size[1];
+
+    if (isGroupCollapsed(group)) {
+      nextWidth = computeCollapsedGroupWidth(group, canvas || getAnyGraphCanvas(group.graph));
+      nextHeight = COLLAPSED_GROUP_HEIGHT;
+    } else {
+      // Lock vertical size to layout-owned height; external drag-based height changes are not allowed.
+      var layoutLockedHeight = null;
+      if (
+        group.__smartGridLastLayoutSize &&
+        Array.isArray(group.__smartGridLastLayoutSize) &&
+        group.__smartGridLastLayoutSize.length >= 2
+      ) {
+        layoutLockedHeight = Number(group.__smartGridLastLayoutSize[1]) || null;
+      }
+      nextWidth = Math.max(getGroupMinWidthPx(group), Number(group.size[0]) || 0);
+      if (layoutLockedHeight != null && !group.__smartGridUpdatingLayout) {
+        nextHeight = Math.max(getGroupMinHeightPx(group), layoutLockedHeight);
+      } else {
+        nextHeight = Math.max(getGroupMinHeightPx(group), Number(group.size[1]) || 0);
+      }
+    }
+
+    if (Math.abs(nextWidth - group.size[0]) <= 0.5 && Math.abs(nextHeight - group.size[1]) <= 0.5) {
+      return false;
+    }
+
+    group.size[0] = nextWidth;
+    group.size[1] = nextHeight;
+    if (!group.__smartGridUpdatingLayout) {
+      updateLayout(group, false);
+    }
+    return true;
+  }
+
+  function enforceAllSmartGridBounds(canvas) {
+    if (!canvas || !canvas.graph || !Array.isArray(canvas.graph._groups)) {
+      return false;
+    }
+    var changed = false;
+    for (var i = 0; i < canvas.graph._groups.length; i += 1) {
+      var group = canvas.graph._groups[i];
+      if (!group || !group.__isSmartGrid) {
+        continue;
+      }
+      if (enforceSmartGridMinBounds(group, canvas)) {
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   function drawSmartGridButton(ctx, rect, label, isHovered) {
@@ -2612,26 +2830,28 @@
     canvas.__smartGridProxyState = proxyState;
   }
 
-  function findDropTargetForNode(canvas, node) {
+  function findDropTargetForNode(canvas, node, dropX, dropY) {
     if (!canvas || !canvas.graph || !node || !node.size) {
       return null;
     }
     var centerX = node.pos[0] + node.size[0] * 0.5;
     var centerY = node.pos[1] + node.size[1] * 0.5;
+    var pointX = typeof dropX === "number" ? dropX : centerX;
+    var pointY = typeof dropY === "number" ? dropY : centerY;
 
     var groups = getSmartGroups(canvas.graph);
     for (var i = groups.length - 1; i >= 0; i -= 1) {
       var group = groups[i];
-      if (!group.isPointInside(centerX, centerY, 0, true)) {
+      if (!group.isPointInside(pointX, pointY, 0, true)) {
         continue;
       }
-      var hit = findColumnHit(group, centerX, centerY);
+      var hit = findColumnHit(group, pointX, pointY);
       if (hit) {
         var insertion = getColumnInsertionHint(
           group,
           hit.rowIndex,
           hit.colIndex,
-          centerY,
+          pointY,
           node.id
         );
         hit.insertIndex = insertion.insertIndex;
@@ -2799,22 +3019,17 @@
     return true;
   }
 
-  loadGridSettings();
-  if (!setupHudGridSettingsControls()) {
-    setTimeout(setupHudGridSettingsControls, 0);
-    setTimeout(setupHudGridSettingsControls, 150);
+  if (!isComfyUIRuntime()) {
+    loadGridSettings();
+    if (!setupHudGridSettingsControls()) {
+      setTimeout(setupHudGridSettingsControls, 0);
+      setTimeout(setupHudGridSettingsControls, 150);
+    }
   }
 
   window.LGraphCanvas.onGroupAdd = function (info, entry, mouse_event) {
     if (typeof originalOnGroupAdd === "function") {
-      originalOnGroupAdd.apply(this, arguments);
-      var canvas = window.LGraphCanvas.active_canvas;
-      if (canvas && canvas.graph && canvas.graph._groups && canvas.graph._groups.length) {
-        var group = canvas.graph._groups[canvas.graph._groups.length - 1];
-        ensureGroupState(group);
-        updateLayout(group, false);
-      }
-      return;
+      return originalOnGroupAdd.apply(this, arguments);
     }
 
     var activeCanvas = window.LGraphCanvas.active_canvas;
@@ -2822,11 +3037,25 @@
       return;
     }
     var group = new window.LiteGraph.LGraphGroup();
-    group.pos = activeCanvas.convertEventToCanvasOffset(mouse_event);
+    group.pos = resolveCanvasPos(activeCanvas, mouse_event);
     activeCanvas.graph.add(group);
-    ensureGroupState(group);
-    updateLayout(group, false);
   };
+
+  if (typeof originalGetCanvasMenuOptions === "function") {
+    window.LGraphCanvas.prototype.getCanvasMenuOptions = function () {
+      var options = originalGetCanvasMenuOptions.apply(this, arguments) || [];
+      options.push(null, {
+        content: "Add Block Space Grid",
+        callback: function (value, menuOptions, event) {
+          var canvas = window.LGraphCanvas.active_canvas || this;
+          var fallbackEvent = canvas && canvas.__smartGridLastContextEvent ? canvas.__smartGridLastContextEvent : null;
+          createSmartGridGroupAtEvent(canvas, event || fallbackEvent);
+        },
+      });
+      return options;
+    };
+  }
+
 
   window.LGraphGroup.prototype.serialize = function () {
     var data = originalGroupSerialize.apply(this, arguments);
@@ -2953,6 +3182,10 @@
       if (!group || !group.__isSmartGrid) {
         continue;
       }
+      enforceSmartGridMinBounds(group, this);
+      if (hasSmartGridExternalResize(group)) {
+        updateLayout(group, false);
+      }
       if (!isGroupCollapsed(group)) {
         refreshManagedNodeBounds(group);
       }
@@ -3016,6 +3249,14 @@
   };
 
   window.LGraphCanvas.prototype.processContextMenu = function (node, event) {
+    if (event) {
+      this.__smartGridLastContextEvent = {
+        canvasX: event.canvasX,
+        canvasY: event.canvasY,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      };
+    }
     if (event && this.graph && typeof this.graph.getGroupOnPos === "function") {
       var group = this.graph.getGroupOnPos(event.canvasX, event.canvasY);
       if (group && group.__isSmartGrid) {
@@ -3032,13 +3273,19 @@
   };
 
   window.LGraphCanvas.prototype.processMouseDown = function (event) {
+    var isLeftButton = event && (event.button === 0 || event.which === 1);
+    // Do not touch non-left clicks so native ComfyUI/LiteGraph context actions stay intact.
+    if (!isLeftButton) {
+      return originalProcessMouseDown.apply(this, arguments);
+    }
+
     if (event && typeof this.adjustMouseEvent === "function") {
       this.adjustMouseEvent(event);
     }
     this.__smartGridGroupDrag = null;
     clearAlignmentState(this);
 
-    var isLeftButton = event && (event.button === 0 || event.which === 1);
+    var isDoubleClick = !!(isLeftButton && event && typeof event.detail === "number" && event.detail >= 2);
     var clickedNode = null;
     if (
       isLeftButton &&
@@ -3048,6 +3295,16 @@
       typeof event.canvasY === "number"
     ) {
       clickedNode = this.graph.getNodeOnPos(event.canvasX, event.canvasY, this.visible_nodes);
+    }
+    if (isDoubleClick) {
+      var dcCollapseHit = findCollapseButtonHit(this, event.canvasX, event.canvasY);
+      var dcAutofitHit = findAutofitButtonHit(this, event.canvasX, event.canvasY);
+      var dcRowHit = findRowDividerHit(this, event.canvasX, event.canvasY);
+      var dcSplitterHit = findSplitterHit(this, event.canvasX, event.canvasY);
+      // Preserve native LiteGraph/ComfyUI double-click behavior unless the click is on a SmartGrid control hotspot.
+      if (!dcCollapseHit && !dcAutofitHit && !dcRowHit && !dcSplitterHit) {
+        return originalProcessMouseDown.apply(this, arguments);
+      }
     }
     if (isLeftButton) {
       var collapseHit = findCollapseButtonHit(this, event.canvasX, event.canvasY);
@@ -3109,6 +3366,11 @@
       this.__smartGridGroupDrag = {
         group: this.selected_group,
       };
+      this.__smartGridManagedMoveDrag = {
+        group: this.selected_group,
+        lastGroupPos: [this.selected_group.pos[0], this.selected_group.pos[1]],
+        lastNodePositions: snapshotManagedNodePositions(this.selected_group),
+      };
     }
     if (isLeftButton && this.selected_group && this.selected_group.__isSmartGrid) {
       syncSmartGridGroupChildren(this.selected_group);
@@ -3141,6 +3403,7 @@
       this.selected_group.__smartGridResizeStartHeight = this.selected_group.size
         ? this.selected_group.size[1]
         : 0;
+      this.selected_group.__smartGridResizeLockedHeight = this.selected_group.__smartGridResizeStartHeight;
       var resizeState = ensureGroupState(this.selected_group);
       var bottomIndex = resizeState.rows.length - 1;
       if (bottomIndex >= 0) {
@@ -3310,14 +3573,17 @@
       var minResizeHeight = isGroupCollapsed(this.selected_group)
         ? COLLAPSED_GROUP_HEIGHT
         : 80;
+      // BSG vertical resizing is disabled; only horizontal group resizing is allowed.
+      var lockedHeight = this.selected_group.__smartGridResizeLockedHeight;
       var desiredHeight = isGroupCollapsed(this.selected_group)
         ? COLLAPSED_GROUP_HEIGHT
-        : Math.max(80, roundToSnapPixels(this.selected_group.size[1]));
+        : Math.max(minResizeHeight, Number(lockedHeight) || Number(this.selected_group.size[1]) || minResizeHeight);
       var sizing = {
         width: Math.max(minResizeWidth, roundToSnapPixels(this.selected_group.size[0])),
         height: desiredHeight,
         minWidth: minResizeWidth,
         minHeight: minResizeHeight,
+        lockHeight: !isGroupCollapsed(this.selected_group),
       };
       sizing = applyGroupResizeAlignmentDuringDrag(this, event, this.selected_group, sizing);
       this.selected_group.size = [sizing.width, sizing.height];
@@ -3344,7 +3610,9 @@
       clearAlignmentState(this);
       this.dirty_bgcanvas = true;
     }
+    syncManagedNodesWithGroupDrag(this);
     applyGroupAlignmentDuringDrag(this, event);
+    refreshManagedMoveBaseline(this);
 
     var isBusyDragging =
       !!this.node_dragged || !!this.resizing_node || !!this.dragging_canvas || !!this.dragging_rectangle;
@@ -3404,6 +3672,7 @@
     }
 
     if (this.node_dragged) {
+      this.__smartGridLastDraggedNode = this.node_dragged;
       var hover = findDropTargetForNode(this, this.node_dragged);
       if (
         hover &&
@@ -3421,6 +3690,11 @@
       }
     } else if (this.__smartGridHover) {
       this.__smartGridHover = null;
+      this.dirty_bgcanvas = true;
+    }
+
+    if (enforceAllSmartGridBounds(this)) {
+      this.dirty_canvas = true;
       this.dirty_bgcanvas = true;
     }
 
@@ -3463,7 +3737,13 @@
       return true;
     }
 
-    var draggedNode = this.node_dragged || null;
+    var draggedNode = this.node_dragged || this.__smartGridLastDraggedNode || null;
+    if (!draggedNode && this.__smartGridNodeDragSnapshot && this.__smartGridNodeDragSnapshot.primaryNodeId != null) {
+      draggedNode = getNodeById(this.graph, this.__smartGridNodeDragSnapshot.primaryNodeId);
+    }
+    if (!draggedNode && this.node_over && this.node_over.id != null) {
+      draggedNode = this.node_over;
+    }
     var resizedNode = this.resizing_node || null;
     var resizedGroup = this.selected_group_resizing && this.selected_group && this.selected_group.__isSmartGrid
       ? this.selected_group
@@ -3477,23 +3757,34 @@
         updateLayout(resizedGroup, false);
         resizedGroup.__smartGridResizeStartHeight = 0;
         resizedGroup.__smartGridResizeStartBottomRowHeight = 0;
+        resizedGroup.__smartGridResizeLockedHeight = 0;
       } else {
-      var minGroupWidth = getGroupMinWidthPx(resizedGroup);
-      var minGroupHeight = isGroupCollapsed(resizedGroup)
-        ? COLLAPSED_GROUP_HEIGHT
-        : 80;
-      resizedGroup.size = [
-        Math.max(minGroupWidth, roundToSnapPixels(resizedGroup.size[0])),
-        Math.max(minGroupHeight, roundToSnapPixels(resizedGroup.size[1])),
-      ];
-      updateLayout(resizedGroup, false);
-      resizedGroup.__smartGridResizeStartHeight = 0;
-      resizedGroup.__smartGridResizeStartBottomRowHeight = 0;
+        var minGroupWidth = getGroupMinWidthPx(resizedGroup);
+        var minGroupHeight = isGroupCollapsed(resizedGroup)
+          ? COLLAPSED_GROUP_HEIGHT
+          : 80;
+        var lockedHeight = Number(resizedGroup.__smartGridResizeLockedHeight) || 0;
+        if (lockedHeight <= 0 && resizedGroup.__smartGridLastLayoutSize && resizedGroup.__smartGridLastLayoutSize.length >= 2) {
+          lockedHeight = Number(resizedGroup.__smartGridLastLayoutSize[1]) || 0;
+        }
+        var nextHeight = lockedHeight > 0
+          ? Math.max(minGroupHeight, roundToSnapPixels(lockedHeight))
+          : Math.max(minGroupHeight, roundToSnapPixels(resizedGroup.size[1]));
+        resizedGroup.size = [
+          Math.max(minGroupWidth, roundToSnapPixels(resizedGroup.size[0])),
+          nextHeight,
+        ];
+        updateLayout(resizedGroup, false);
+        resizedGroup.__smartGridResizeStartHeight = 0;
+        resizedGroup.__smartGridResizeStartBottomRowHeight = 0;
+        resizedGroup.__smartGridResizeLockedHeight = 0;
       }
     }
 
     if (draggedNode) {
-      var hit = findDropTargetForNode(this, draggedNode);
+      var dropX = event && typeof event.canvasX === "number" ? event.canvasX : null;
+      var dropY = event && typeof event.canvasY === "number" ? event.canvasY : null;
+      var hit = findDropTargetForNode(this, draggedNode, dropX, dropY);
       if (hit) {
         var dragSnapshot = this.__smartGridNodeDragSnapshot;
         var targetCol = getColumnByIndex(hit.group, hit.rowIndex, hit.colIndex);
@@ -3588,7 +3879,14 @@
     }
     clearAlignmentState(this);
     this.__smartGridGroupDrag = null;
+    this.__smartGridManagedMoveDrag = null;
     this.__smartGridNodeDragSnapshot = null;
+    this.__smartGridLastDraggedNode = null;
+
+    if (enforceAllSmartGridBounds(this)) {
+      this.dirty_canvas = true;
+      this.dirty_bgcanvas = true;
+    }
 
     return result;
   };

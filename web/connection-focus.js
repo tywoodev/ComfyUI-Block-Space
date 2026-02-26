@@ -35,6 +35,9 @@
     pulseColor: "#ff00ae",
     connectorStubLength: 34,
     connectorStyle: "hybrid",
+    enableHybrid: true,
+    enableStraight: true,
+    enableAngled: true,
   };
   var CONNECTOR_FAN_SPACING = 8;
 
@@ -43,6 +46,40 @@
       return styleValue;
     }
     return defaultSettings.connectorStyle;
+  }
+
+  function isComfyUIRuntime() {
+    return !!(
+      window.BetterNodesSettings &&
+      typeof window.BetterNodesSettings.isComfyUIRuntime === "function" &&
+      window.BetterNodesSettings.isComfyUIRuntime()
+    );
+  }
+
+  function getEnabledConnectorStyles(settings) {
+    var enabled = [];
+    if (settings.enableHybrid) {
+      enabled.push("hybrid");
+    }
+    if (settings.enableStraight) {
+      enabled.push("straight");
+    }
+    if (settings.enableAngled) {
+      enabled.push("angled");
+    }
+    return enabled;
+  }
+
+  function resolveAllowedConnectorStyle(styleValue, settings) {
+    var preferred = normalizeConnectorStyle(styleValue);
+    var enabled = getEnabledConnectorStyles(settings);
+    if (enabled.length === 0) {
+      return defaultSettings.connectorStyle;
+    }
+    if (enabled.indexOf(preferred) !== -1) {
+      return preferred;
+    }
+    return enabled[0];
   }
 
   function getFocusSettings() {
@@ -57,7 +94,10 @@
       settings.connectorStubLength = defaultSettings.connectorStubLength;
     }
     settings.connectorStubLength = Math.max(10, Math.min(80, settings.connectorStubLength));
-    settings.connectorStyle = normalizeConnectorStyle(settings.connectorStyle);
+    settings.enableHybrid = settings.enableHybrid !== false;
+    settings.enableStraight = settings.enableStraight !== false;
+    settings.enableAngled = settings.enableAngled !== false;
+    settings.connectorStyle = resolveAllowedConnectorStyle(settings.connectorStyle, settings);
     return settings;
   }
 
@@ -171,7 +211,17 @@
         styleChanged = normalizedStyle !== settings.connectorStyle;
         settings.connectorStyle = normalizedStyle;
       }
+      if (typeof partialSettings.enableHybrid === "boolean") {
+        settings.enableHybrid = partialSettings.enableHybrid;
+      }
+      if (typeof partialSettings.enableStraight === "boolean") {
+        settings.enableStraight = partialSettings.enableStraight;
+      }
+      if (typeof partialSettings.enableAngled === "boolean") {
+        settings.enableAngled = partialSettings.enableAngled;
+      }
     }
+    settings.connectorStyle = resolveAllowedConnectorStyle(settings.connectorStyle, settings);
     // Keep pulse animation alive when changing connector style mid-focus.
     if (styleChanged && focusState.isHolding && focusState.activeCanvas && focusState.activeNodeId != null) {
       focusState.animationTime = window.performance ? window.performance.now() : Date.now();
@@ -183,10 +233,16 @@
       pulseColor: settings.pulseColor,
       connectorStubLength: settings.connectorStubLength,
       connectorStyle: settings.connectorStyle,
+      enableHybrid: settings.enableHybrid,
+      enableStraight: settings.enableStraight,
+      enableAngled: settings.enableAngled,
     };
   };
 
   function setupDebugColorPicker() {
+    if (isComfyUIRuntime()) {
+      return;
+    }
     var input = document.getElementById("focus-pulse-color");
     if (!input) {
       return;
@@ -203,6 +259,9 @@
   }
 
   function setupDebugConnectorStyleSelector() {
+    if (isComfyUIRuntime()) {
+      return;
+    }
     var select = document.getElementById("focus-connector-style");
     if (!select) {
       return;
@@ -223,6 +282,9 @@
   }
 
   function ensureFocusVersionStamp() {
+    if (isComfyUIRuntime()) {
+      return;
+    }
     var hud = document.querySelector(".hud");
     if (!hud) {
       return;

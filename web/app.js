@@ -17,6 +17,10 @@
     reportStatus("LiteGraph failed to load in app.js.", true);
     return;
   }
+  // Demo graph/node registration is sandbox-only and must never run inside ComfyUI.
+  if (!document || !document.body || document.body.getAttribute("data-betternodes-sandbox") !== "1") {
+    return;
+  }
   var WORKSPACE_STORAGE_KEY = "comfy-better-nodes.workspace.v1";
 
   function bindResetWorkspaceButton() {

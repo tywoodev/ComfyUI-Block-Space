@@ -1,6 +1,15 @@
 (function () {
   "use strict";
-  var LOCAL_ASSET_VERSION = "2026-02-25-smartgrid-alignments-v10";
+  // Sandbox bootstrap must never execute in ComfyUI runtime.
+  var isSandboxPage =
+    !!document &&
+    !!document.body &&
+    document.body.getAttribute("data-betternodes-sandbox") === "1";
+  if (!isSandboxPage) {
+    return;
+  }
+
+  var LOCAL_ASSET_VERSION = "2026-02-26-comfyui-integration-phase-001-runtime-split-v12";
 
   var statusLines = [];
   var statusEl = document.getElementById("status-overlay");
@@ -108,6 +117,15 @@
 
       if (typeof window.LiteGraph === "undefined" || typeof window.LGraphCanvas === "undefined") {
         throw new Error("LiteGraph globals are unavailable after script load.");
+      }
+
+      await loadScript("./better-nodes-settings.js?v=" + LOCAL_ASSET_VERSION);
+      setStatus("Better Nodes settings bridge loaded.");
+      if (
+        window.BetterNodesSettings &&
+        typeof window.BetterNodesSettings.__setComfyUIRuntime === "function"
+      ) {
+        window.BetterNodesSettings.__setComfyUIRuntime(false);
       }
 
       await loadScript("./smart-drop.js?v=" + LOCAL_ASSET_VERSION);
