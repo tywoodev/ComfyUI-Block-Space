@@ -244,8 +244,16 @@
     return valid[0];
   }
 
-  function computeWinningXCandidate(activeBounds, winner, snapMargin) {
+  function computeWinningXCandidate(activeBounds, winner, snapMargin, useLeftAlignOnly) {
     var winnerBounds = winner.bounds;
+    if (useLeftAlignOnly) {
+      var alignTargetX = winnerBounds.left;
+      return {
+        targetX: alignTargetX,
+        delta: Math.abs(activeBounds.left - alignTargetX),
+        mode: "top_bottom_left_align",
+      };
+    }
     var side = winner.direction || "left";
     var marginTargetX =
       side === "left"
@@ -390,9 +398,14 @@
     var didSnap = false;
 
     var xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "x");
+    var xUseTopBottomFallback = false;
+    if (!xWinner) {
+      xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "y", "above", "below");
+      xUseTopBottomFallback = !!xWinner;
+    }
     if (xWinner) {
       setWinnerHighlight(this, xWinner.node);
-      var xCandidate = computeWinningXCandidate(activeBounds, xWinner, snapMargin);
+      var xCandidate = computeWinningXCandidate(activeBounds, xWinner, snapMargin, xUseTopBottomFallback);
       if (xCandidate.delta <= thresholdCanvas) {
         activeNode.pos[0] = xCandidate.targetX;
         didSnap = true;
