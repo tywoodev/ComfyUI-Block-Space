@@ -35,3 +35,4 @@ This repo is a static HTML/JS prototype; there is no build step.
 ## Configuration & Safety Notes
 - External dependencies are loaded from public CDNs in `bootstrap.js`.
 - Keep CDN URLs version-pinned and update both fallback sources together.
+- For JavaScript-based ComfyUI customizations, always reference `docs/comfyui-dev-doc.md` first for best practices and standard solution patterns before implementing changes.
