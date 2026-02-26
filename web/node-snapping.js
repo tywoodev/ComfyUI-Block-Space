@@ -131,7 +131,7 @@
     return canvas.graph._nodes;
   }
 
-  function chooseWinningTarget(activeNode, activeBounds, allNodes, maxSearchDistance) {
+  function collectValidTargets(activeNode, activeBounds, allNodes, maxSearchDistance, side) {
     var valid = [];
     for (var i = 0; i < allNodes.length; i += 1) {
       var target = allNodes[i];
@@ -142,18 +142,37 @@
       if (!targetBounds) {
         continue;
       }
-      if (!(targetBounds.centerX < activeBounds.centerX)) {
-        continue;
+      var emptySpace = 0;
+      if (side === "left") {
+        if (!(targetBounds.centerX < activeBounds.centerX)) {
+          continue;
+        }
+        emptySpace = activeBounds.left - targetBounds.right;
+      } else {
+        if (!(targetBounds.centerX > activeBounds.centerX)) {
+          continue;
+        }
+        emptySpace = targetBounds.left - activeBounds.right;
       }
-      var emptySpace = activeBounds.left - targetBounds.right;
       if (!(emptySpace <= maxSearchDistance)) {
         continue;
       }
       valid.push({
         node: target,
         bounds: targetBounds,
+        side: side,
         yDistance: Math.abs(activeBounds.top - targetBounds.top),
       });
+    }
+    return valid;
+  }
+
+  function chooseWinningTarget(activeNode, activeBounds, allNodes, maxSearchDistance) {
+    // Primary behavior: prefer left-side neighbors.
+    var valid = collectValidTargets(activeNode, activeBounds, allNodes, maxSearchDistance, "left");
+    // Fallback: if none are available on the left, evaluate right-side neighbors.
+    if (!valid.length) {
+      valid = collectValidTargets(activeNode, activeBounds, allNodes, maxSearchDistance, "right");
     }
 
     if (!valid.length) {
@@ -167,8 +186,13 @@
     return valid[0];
   }
 
-  function computeWinningCandidate(activeBounds, winnerBounds, snapMargin) {
-    var marginTargetX = winnerBounds.right + snapMargin;
+  function computeWinningCandidate(activeBounds, winner, snapMargin) {
+    var winnerBounds = winner.bounds;
+    var side = winner.side || "left";
+    var marginTargetX =
+      side === "left"
+        ? winnerBounds.right + snapMargin
+        : winnerBounds.left - snapMargin - (activeBounds.right - activeBounds.left);
     var marginDelta = Math.abs(activeBounds.left - marginTargetX);
     var leftTargetX = winnerBounds.left;
     var leftDelta = Math.abs(activeBounds.left - leftTargetX);
@@ -274,7 +298,7 @@
     }
     setWinnerHighlight(this, winner.node);
 
-    var candidate = computeWinningCandidate(activeBounds, winner.bounds, snapMargin);
+    var candidate = computeWinningCandidate(activeBounds, winner, snapMargin);
     var thresholdCanvas = SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(this));
     if (candidate.delta <= thresholdCanvas) {
       activeNode.pos[0] = candidate.targetX;
