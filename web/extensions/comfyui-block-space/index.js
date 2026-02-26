@@ -1,6 +1,6 @@
 import { app } from "/scripts/app.js";
 
-const ASSET_VERSION = "2026-02-26-comfyui-integration-phase-001-runtime-split-v12";
+const ASSET_VERSION = "2026-02-26-comfyui-node-snapping-phase-1-v6";
 
 const CONNECTOR_DEFAULTS = {
   flowColor: "#ff00ae",
@@ -20,6 +20,13 @@ const GRID_DEFAULTS = {
   gridLineColor: "#ffffff",
   gridLineStyle: "solid",
   edgeToEdgeSnapGapPx: 20,
+};
+
+const NODE_SNAP_DEFAULTS = {
+  marginPx: 20,
+  highlightEnabled: true,
+  highlightColor: "#57b1ff",
+  highlightWidth: 3,
 };
 
 function asBool(value, fallback) {
@@ -104,6 +111,7 @@ async function ensureRuntimeScriptsLoaded(baseUrl) {
     "../../smart-sizing.js",
     "../../connection-focus.js",
     "../../smart-grid-container.js",
+    "../../node-snapping.js",
   ];
   for (const rel of scripts) {
     const url = new URL(rel, baseUrl).toString() + "?v=" + ASSET_VERSION;
@@ -196,6 +204,29 @@ function applyGridSettings() {
   window.SmartGrid.setLayoutSettings(settings);
   if (window.BetterNodesSettings) {
     window.BetterNodesSettings.set("comfyuiBlockSpace.smartgrid", settings);
+  }
+}
+
+function applyNodeSnapSettings() {
+  if (window.BetterNodesSettings) {
+    window.BetterNodesSettings.set("comfyuiBlockSpace.nodeSnap", {
+      marginPx: asNumber(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.marginPx", NODE_SNAP_DEFAULTS.marginPx),
+        NODE_SNAP_DEFAULTS.marginPx
+      ),
+      highlightEnabled: asBool(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.highlightEnabled", NODE_SNAP_DEFAULTS.highlightEnabled),
+        NODE_SNAP_DEFAULTS.highlightEnabled
+      ),
+      highlightColor: asColor(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.highlightColor", NODE_SNAP_DEFAULTS.highlightColor),
+        NODE_SNAP_DEFAULTS.highlightColor
+      ),
+      highlightWidth: asNumber(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.highlightWidth", NODE_SNAP_DEFAULTS.highlightWidth),
+        NODE_SNAP_DEFAULTS.highlightWidth
+      ),
+    });
   }
 }
 
@@ -312,6 +343,37 @@ function registerGridSettings() {
   });
 }
 
+function registerNodeSnapSettings() {
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.marginPx",
+    name: "Block Space: Node Snap Margin",
+    type: "number",
+    defaultValue: NODE_SNAP_DEFAULTS.marginPx,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.highlightEnabled",
+    name: "Block Space: Node Snap Highlight Enabled",
+    type: "boolean",
+    defaultValue: NODE_SNAP_DEFAULTS.highlightEnabled,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.highlightColor",
+    name: "Block Space: Node Snap Highlight Color",
+    type: "text",
+    defaultValue: NODE_SNAP_DEFAULTS.highlightColor,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.highlightWidth",
+    name: "Block Space: Node Snap Highlight Width",
+    type: "number",
+    defaultValue: NODE_SNAP_DEFAULTS.highlightWidth,
+    onChange: applyNodeSnapSettings,
+  });
+}
+
 app.registerExtension({
   name: "Block Space",
   async setup() {
@@ -323,10 +385,19 @@ app.registerExtension({
 
     await ensureRuntimeScriptsLoaded(import.meta.url);
 
+    if (
+      window.BlockSpaceNodeSnap &&
+      typeof window.BlockSpaceNodeSnap.resetPersistedHighlightArtifacts === "function"
+    ) {
+      window.BlockSpaceNodeSnap.resetPersistedHighlightArtifacts(app && app.canvas);
+    }
+
     hideStandaloneHudInComfyUI();
     registerConnectorSettings();
     registerGridSettings();
+    registerNodeSnapSettings();
     applyConnectorSettings();
     applyGridSettings();
+    applyNodeSnapSettings();
   },
 });
