@@ -131,7 +131,12 @@
     return canvas.graph._nodes;
   }
 
-  function collectValidTargets(activeNode, activeBounds, allNodes, maxSearchDistance, side) {
+  function rangesOverlap(aMin, aMax, bMin, bMax, tolerance) {
+    var tol = Number(tolerance) || 0;
+    return Math.min(aMax, bMax) - Math.max(aMin, bMin) >= -tol;
+  }
+
+  function collectValidTargetsForAxis(activeNode, activeBounds, allNodes, maxSearchDistance, axis, direction) {
     var valid = [];
     for (var i = 0; i < allNodes.length; i += 1) {
       var target = allNodes[i];
@@ -143,36 +148,60 @@
         continue;
       }
       var emptySpace = 0;
-      if (side === "left") {
-        if (!(targetBounds.centerX < activeBounds.centerX)) {
+      if (axis === "x") {
+        if (direction === "left") {
+          if (!(targetBounds.centerX < activeBounds.centerX)) {
+            continue;
+          }
+          emptySpace = activeBounds.left - targetBounds.right;
+        } else {
+          if (!(targetBounds.centerX > activeBounds.centerX)) {
+            continue;
+          }
+          emptySpace = targetBounds.left - activeBounds.right;
+        }
+        // Side-by-side snapping must share vertical band overlap.
+        if (!rangesOverlap(activeBounds.top, activeBounds.bottom, targetBounds.top, targetBounds.bottom, 0)) {
           continue;
         }
-        emptySpace = activeBounds.left - targetBounds.right;
       } else {
-        if (!(targetBounds.centerX > activeBounds.centerX)) {
+        if (direction === "above") {
+          if (!(targetBounds.centerY < activeBounds.centerY)) {
+            continue;
+          }
+          emptySpace = activeBounds.top - targetBounds.bottom;
+        } else {
+          if (!(targetBounds.centerY > activeBounds.centerY)) {
+            continue;
+          }
+          emptySpace = targetBounds.top - activeBounds.bottom;
+        }
+        // Vertical stacking snapping must share horizontal band overlap.
+        if (!rangesOverlap(activeBounds.left, activeBounds.right, targetBounds.left, targetBounds.right, 0)) {
           continue;
         }
-        emptySpace = targetBounds.left - activeBounds.right;
       }
-      if (!(emptySpace <= maxSearchDistance)) {
+      // Must be an actual gap in-range; reject overlap/penetration.
+      if (!(emptySpace >= 0 && emptySpace <= maxSearchDistance)) {
         continue;
       }
       valid.push({
         node: target,
         bounds: targetBounds,
-        side: side,
-        yDistance: Math.abs(activeBounds.top - targetBounds.top),
+        axis: axis,
+        direction: direction,
+        distance: Math.abs(activeBounds.top - targetBounds.top),
       });
     }
     return valid;
   }
 
-  function chooseWinningTarget(activeNode, activeBounds, allNodes, maxSearchDistance) {
-    // Primary behavior: prefer left-side neighbors.
-    var valid = collectValidTargets(activeNode, activeBounds, allNodes, maxSearchDistance, "left");
-    // Fallback: if none are available on the left, evaluate right-side neighbors.
+  function chooseWinningTargetForAxis(activeNode, activeBounds, allNodes, maxSearchDistance, axis) {
+    var primary = axis === "y" ? "above" : "left";
+    var fallback = axis === "y" ? "below" : "right";
+    var valid = collectValidTargetsForAxis(activeNode, activeBounds, allNodes, maxSearchDistance, axis, primary);
     if (!valid.length) {
-      valid = collectValidTargets(activeNode, activeBounds, allNodes, maxSearchDistance, "right");
+      valid = collectValidTargetsForAxis(activeNode, activeBounds, allNodes, maxSearchDistance, axis, fallback);
     }
 
     if (!valid.length) {
@@ -180,15 +209,15 @@
     }
 
     valid.sort(function (a, b) {
-      return a.yDistance - b.yDistance;
+      return a.distance - b.distance;
     });
 
     return valid[0];
   }
 
-  function computeWinningCandidate(activeBounds, winner, snapMargin) {
+  function computeWinningXCandidate(activeBounds, winner, snapMargin) {
     var winnerBounds = winner.bounds;
-    var side = winner.side || "left";
+    var side = winner.direction || "left";
     var marginTargetX =
       side === "left"
         ? winnerBounds.right + snapMargin
@@ -208,6 +237,31 @@
       targetX: leftTargetX,
       delta: leftDelta,
       mode: "left_align",
+    };
+  }
+
+  function computeWinningYCandidate(activeBounds, winner, snapMargin) {
+    var winnerBounds = winner.bounds;
+    var direction = winner.direction || "above";
+    var marginTargetY =
+      direction === "above"
+        ? winnerBounds.bottom + snapMargin
+        : winnerBounds.top - snapMargin - (activeBounds.bottom - activeBounds.top);
+    var marginDelta = Math.abs(activeBounds.top - marginTargetY);
+    var topTargetY = winnerBounds.top;
+    var topDelta = Math.abs(activeBounds.top - topTargetY);
+
+    if (marginDelta <= topDelta) {
+      return {
+        targetY: marginTargetY,
+        delta: marginDelta,
+        mode: "margin",
+      };
+    }
+    return {
+      targetY: topTargetY,
+      delta: topDelta,
+      mode: "top_align",
     };
   }
 
@@ -291,22 +345,37 @@
 
     var snapMargin = getSnapMargin();
     var maxSearchDistance = snapMargin * 2;
-    var winner = chooseWinningTarget(activeNode, activeBounds, getGraphNodes(this), maxSearchDistance);
-    if (!winner) {
-      clearSnapVisual(this);
-      return result;
-    }
-    setWinnerHighlight(this, winner.node);
-
-    var candidate = computeWinningCandidate(activeBounds, winner, snapMargin);
     var thresholdCanvas = SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(this));
-    if (candidate.delta <= thresholdCanvas) {
-      activeNode.pos[0] = candidate.targetX;
+
+    var nodes = getGraphNodes(this);
+    var didSnap = false;
+
+    var xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "x");
+    if (xWinner) {
+      setWinnerHighlight(this, xWinner.node);
+      var xCandidate = computeWinningXCandidate(activeBounds, xWinner, snapMargin);
+      if (xCandidate.delta <= thresholdCanvas) {
+        activeNode.pos[0] = xCandidate.targetX;
+        didSnap = true;
+      }
+    }
+
+    var yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "y");
+    if (yWinner) {
+      setWinnerHighlight(this, yWinner.node);
+      var yCandidate = computeWinningYCandidate(activeBounds, yWinner, snapMargin);
+      if (yCandidate.delta <= thresholdCanvas) {
+        activeNode.pos[1] = yCandidate.targetY;
+        didSnap = true;
+      }
+    }
+
+    if (!xWinner && !yWinner) {
+      clearSnapVisual(this);
+    }
+    if (didSnap) {
       this.dirty_canvas = true;
       this.dirty_bgcanvas = true;
-    } else {
-      // Keep winner highlight visible while dragging for target visibility,
-      // even when snap threshold is not currently met.
     }
 
     return result;
