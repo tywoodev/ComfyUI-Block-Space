@@ -131,6 +131,29 @@
     return canvas.graph._nodes;
   }
 
+  function getDragDelta(canvas, event) {
+    if (!canvas || !event || typeof event.canvasX !== "number" || typeof event.canvasY !== "number") {
+      return { dx: 0, dy: 0 };
+    }
+    var prev = canvas.__blockSpacePrevDragPoint;
+    var current = { x: event.canvasX, y: event.canvasY };
+    canvas.__blockSpacePrevDragPoint = current;
+    if (!prev) {
+      return { dx: 0, dy: 0 };
+    }
+    return {
+      dx: current.x - prev.x,
+      dy: current.y - prev.y,
+    };
+  }
+
+  function isYDominantDrag(delta) {
+    if (!delta) {
+      return false;
+    }
+    return Math.abs(delta.dy) > Math.abs(delta.dx);
+  }
+
   function rangesOverlap(aMin, aMax, bMin, bMax, tolerance) {
     var tol = Number(tolerance) || 0;
     return Math.min(aMax, bMax) - Math.max(aMin, bMin) >= -tol;
@@ -196,12 +219,18 @@
     return valid;
   }
 
-  function chooseWinningTargetForAxis(activeNode, activeBounds, allNodes, maxSearchDistance, axis) {
-    var primary = axis === "y" ? "above" : "left";
-    var fallback = axis === "y" ? "below" : "right";
+  function chooseWinningTargetForAxis(activeNode, activeBounds, allNodes, maxSearchDistance, axis, primary, fallback) {
+    if (primary == null) {
+      primary = axis === "y" ? "above" : "left";
+    }
+    if (typeof fallback === "undefined") {
+      fallback = axis === "y" ? "below" : "right";
+    }
     var valid = collectValidTargetsForAxis(activeNode, activeBounds, allNodes, maxSearchDistance, axis, primary);
     if (!valid.length) {
-      valid = collectValidTargetsForAxis(activeNode, activeBounds, allNodes, maxSearchDistance, axis, fallback);
+      if (fallback) {
+        valid = collectValidTargetsForAxis(activeNode, activeBounds, allNodes, maxSearchDistance, axis, fallback);
+      }
     }
 
     if (!valid.length) {
@@ -240,8 +269,16 @@
     };
   }
 
-  function computeWinningYCandidate(activeBounds, winner, snapMargin) {
+  function computeWinningYCandidate(activeBounds, winner, snapMargin, useTopFlushOnly) {
     var winnerBounds = winner.bounds;
+    if (useTopFlushOnly) {
+      var flushTargetY = winnerBounds.top;
+      return {
+        targetY: flushTargetY,
+        delta: Math.abs(activeBounds.top - flushTargetY),
+        mode: "left_top_flush",
+      };
+    }
     var direction = winner.direction || "above";
     var marginTargetY =
       direction === "above"
@@ -335,8 +372,10 @@
     var activeNode = getActiveDraggedNode(this, event);
     if (!activeNode || activeNode.constructor === window.LGraphGroup) {
       clearSnapVisual(this);
+      this.__blockSpacePrevDragPoint = null;
       return result;
     }
+    var dragDelta = getDragDelta(this, event);
 
     var activeBounds = getNodeBounds(activeNode);
     if (!activeBounds) {
@@ -360,10 +399,24 @@
       }
     }
 
-    var yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "y");
+    var yDominant = isYDominantDrag(dragDelta);
+    var yWinner = null;
+    var yUseTopFlushFallback = false;
+    if (yDominant) {
+      yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "y", "above", null);
+      if (!yWinner) {
+        yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "x", "left", null);
+        if (!yWinner) {
+          yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "x", "right", null);
+        }
+        yUseTopFlushFallback = !!yWinner;
+      }
+    } else {
+      yWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, maxSearchDistance, "y");
+    }
     if (yWinner) {
       setWinnerHighlight(this, yWinner.node);
-      var yCandidate = computeWinningYCandidate(activeBounds, yWinner, snapMargin);
+      var yCandidate = computeWinningYCandidate(activeBounds, yWinner, snapMargin, yUseTopFlushFallback);
       if (yCandidate.delta <= thresholdCanvas) {
         activeNode.pos[1] = yCandidate.targetY;
         didSnap = true;
@@ -384,6 +437,7 @@
   window.LGraphCanvas.prototype.processMouseUp = function (event) {
     var result = originalProcessMouseUp.apply(this, arguments);
     clearSnapVisual(this);
+    this.__blockSpacePrevDragPoint = null;
     return result;
   };
 
