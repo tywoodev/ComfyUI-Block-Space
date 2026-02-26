@@ -623,8 +623,9 @@
       : null;
 
     var minSize = getNodeMinSize(resizingNode);
-    // Y resize snapping is disabled; always allow X snapping regardless of resize axis lock.
+    // Always allow X/Y resize snapping regardless of axis lock.
     var applyX = true;
+    var applyY = true;
     var status = {
       active: true,
       node: resizingNode && (resizingNode.title || resizingNode.type || resizingNode.id),
@@ -635,6 +636,14 @@
       xThreshold: thresholdXCanvas,
       xReference: bounds.right,
       xTarget: xCandidate ? xCandidate.targetRight : null,
+      yWinner: null,
+      yMode: null,
+      yDelta: null,
+      yThreshold: thresholdCanvas,
+      yReference: yReferenceBounds.bottom,
+      yTarget: null,
+      xDidSnap: false,
+      yDidSnap: false,
       didSnap: false,
     };
 
@@ -646,12 +655,150 @@
         if (isFinite(nextWidth) && Math.abs(nextWidth - currentWidth) > 0.01) {
           resizingNode.size[0] = nextWidth;
           didSnap = true;
+          status.xDidSnap = true;
           status.xReference = bounds.left + nextWidth;
         }
       }
     }
 
-    // Y-axis resize snapping is intentionally disabled for now.
+    // Recompute bounds after potential width snap before evaluating Y.
+    bounds = getNodeBounds(resizingNode) || bounds;
+    yReferenceBounds = {
+      left: bounds.left,
+      right: bounds.right,
+      top: bounds.bottom,
+      bottom: bounds.bottom,
+      centerX: bounds.centerX,
+      centerY: bounds.bottom,
+    };
+    status.yReference = yReferenceBounds.bottom;
+
+    function pickYResizeCandidate() {
+      var winner = null;
+      var candidate = null;
+
+      // 1) Below.top
+      winner = chooseWinningTargetForAxis(
+        resizingNode,
+        yReferenceBounds,
+        nodes,
+        ySearchDistance,
+        "y",
+        "below",
+        null
+      );
+      if (winner) {
+        candidate = {
+          targetBottom: winner.bounds.top,
+          delta: Math.abs(yReferenceBounds.bottom - winner.bounds.top),
+          mode: "below_top",
+        };
+        return { winner: winner, candidate: candidate };
+      }
+
+      // 2) Left.bottom
+      winner = chooseWinningTargetForAxis(
+        resizingNode,
+        bounds,
+        nodes,
+        xSearchDistance,
+        "x",
+        "left",
+        null
+      );
+      if (winner) {
+        candidate = {
+          targetBottom: winner.bounds.bottom,
+          delta: Math.abs(yReferenceBounds.bottom - winner.bounds.bottom),
+          mode: "left_bottom",
+        };
+        return { winner: winner, candidate: candidate };
+      }
+
+      // 3) Right.bottom
+      winner = chooseWinningTargetForAxis(
+        resizingNode,
+        bounds,
+        nodes,
+        xSearchDistance,
+        "x",
+        "right",
+        null
+      );
+      if (winner) {
+        candidate = {
+          targetBottom: winner.bounds.bottom,
+          delta: Math.abs(yReferenceBounds.bottom - winner.bounds.bottom),
+          mode: "right_bottom",
+        };
+        return { winner: winner, candidate: candidate };
+      }
+
+      // 4) Left.top (if left node is below current node center)
+      var leftBelowWinner = chooseWinningTargetForAxis(
+        resizingNode,
+        bounds,
+        nodes,
+        xSearchDistance,
+        "x",
+        "left",
+        null
+      );
+      if (leftBelowWinner && leftBelowWinner.bounds.centerY > bounds.centerY) {
+        candidate = {
+          targetBottom: leftBelowWinner.bounds.top,
+          delta: Math.abs(yReferenceBounds.bottom - leftBelowWinner.bounds.top),
+          mode: "left_top_if_below",
+        };
+        return { winner: leftBelowWinner, candidate: candidate };
+      }
+
+      // 5) Right.top (if right node is below current node center)
+      var rightBelowWinner = chooseWinningTargetForAxis(
+        resizingNode,
+        bounds,
+        nodes,
+        xSearchDistance,
+        "x",
+        "right",
+        null
+      );
+      if (rightBelowWinner && rightBelowWinner.bounds.centerY > bounds.centerY) {
+        candidate = {
+          targetBottom: rightBelowWinner.bounds.top,
+          delta: Math.abs(yReferenceBounds.bottom - rightBelowWinner.bounds.top),
+          mode: "right_top_if_below",
+        };
+        return { winner: rightBelowWinner, candidate: candidate };
+      }
+
+      return { winner: null, candidate: null };
+    }
+
+    var yResult = pickYResizeCandidate();
+    var yWinner = yResult.winner;
+    var yCandidate = yResult.candidate;
+
+    if (yWinner && yCandidate) {
+      status.yWinner = yWinner.node
+        ? (yWinner.node.title || yWinner.node.type || yWinner.node.id)
+        : null;
+      status.yMode = yCandidate.mode;
+      status.yDelta = yCandidate.delta;
+      status.yTarget = yCandidate.targetBottom;
+
+      if (applyY && yCandidate.delta <= thresholdCanvas) {
+        var currentHeight = Number(resizingNode.size[1]) || 0;
+        var nextHeight = Math.max(minSize[1], yCandidate.targetBottom - bounds.top);
+        if (isFinite(nextHeight) && Math.abs(nextHeight - currentHeight) > 0.01) {
+          resizingNode.size[1] = nextHeight;
+          didSnap = true;
+          status.yDidSnap = true;
+          status.yReference = bounds.top + nextHeight;
+        }
+      }
+    }
+
     status.didSnap = didSnap;
     canvas.__blockSpaceResizeDebugStatus = status;
 
@@ -763,6 +910,10 @@
     var threshold = s.xThreshold == null ? "-" : Number(s.xThreshold).toFixed(2);
     var xRef = s.xReference == null ? "-" : Number(s.xReference).toFixed(2);
     var xTarget = s.xTarget == null ? "-" : Number(s.xTarget).toFixed(2);
+    var yDelta = s.yDelta == null ? "-" : Number(s.yDelta).toFixed(2);
+    var yThreshold = s.yThreshold == null ? "-" : Number(s.yThreshold).toFixed(2);
+    var yRef = s.yReference == null ? "-" : Number(s.yReference).toFixed(2);
+    var yTarget = s.yTarget == null ? "-" : Number(s.yTarget).toFixed(2);
     hud.textContent =
       "Resize snap: active\n" +
       "Cursor X: " + cursorX + "\n" +
@@ -771,8 +922,15 @@
       "X ref: " + xRef + "\n" +
       "X target: " + xTarget + "\n" +
       "X winner: " + (s.xWinner || "none") + "\n" +
-      "Mode: " + (s.xMode || "-") + "\n" +
-      "Delta/Threshold: " + delta + " / " + threshold + "\n" +
+      "X mode: " + (s.xMode || "-") + "\n" +
+      "X Delta/Threshold: " + delta + " / " + threshold + "\n" +
+      "X did snap: " + (s.xDidSnap ? "true" : "false") + "\n" +
+      "Y ref: " + yRef + "\n" +
+      "Y target: " + yTarget + "\n" +
+      "Y winner: " + (s.yWinner || "none") + "\n" +
+      "Y mode: " + (s.yMode || "-") + "\n" +
+      "Y Delta/Threshold: " + yDelta + " / " + yThreshold + "\n" +
+      "Y did snap: " + (s.yDidSnap ? "true" : "false") + "\n" +
       "Did snap: " + (s.didSnap ? "true" : "false");
   }
 

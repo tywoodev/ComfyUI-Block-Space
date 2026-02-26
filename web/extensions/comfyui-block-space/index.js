@@ -1,6 +1,6 @@
 import { app } from "/scripts/app.js";
 
-const ASSET_VERSION = "2026-02-26-comfyui-node-snapping-phase-1-v25";
+const ASSET_VERSION = "2026-02-26-comfyui-node-snapping-phase-1-v27";
 
 const CONNECTOR_DEFAULTS = {
   flowColor: "#ff00ae",
