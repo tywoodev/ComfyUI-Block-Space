@@ -324,6 +324,362 @@
     return valid[0];
   }
 
+  function chooseBelowByXProximity(activeNode, activeBounds, allNodes, maxSearchDistance, ignoreMaxSearchDistance) {
+    var valid = [];
+    for (var i = 0; i < allNodes.length; i += 1) {
+      var target = allNodes[i];
+      if (!target || target === activeNode || target.constructor === window.LGraphGroup) {
+        continue;
+      }
+      var targetBounds = getNodeBounds(target);
+      if (!targetBounds) {
+        continue;
+      }
+      if (!(targetBounds.centerY > activeBounds.centerY)) {
+        continue;
+      }
+      var verticalGap = targetBounds.top - activeBounds.bottom;
+      if (!(verticalGap >= 0 && (ignoreMaxSearchDistance || verticalGap <= maxSearchDistance))) {
+        continue;
+      }
+      valid.push({
+        node: target,
+        bounds: targetBounds,
+        xDistance: Math.abs(activeBounds.centerX - targetBounds.centerX),
+        yDistance: Math.abs(activeBounds.top - targetBounds.top),
+      });
+    }
+
+    if (!valid.length) {
+      return null;
+    }
+
+    valid.sort(function (a, b) {
+      if (a.xDistance !== b.xDistance) {
+        return a.xDistance - b.xDistance;
+      }
+      return a.yDistance - b.yDistance;
+    });
+    return valid[0];
+  }
+
+  function chooseAboveByXProximity(activeNode, activeBounds, allNodes, maxSearchDistance, ignoreMaxSearchDistance) {
+    var valid = [];
+    for (var i = 0; i < allNodes.length; i += 1) {
+      var target = allNodes[i];
+      if (!target || target === activeNode || target.constructor === window.LGraphGroup) {
+        continue;
+      }
+      var targetBounds = getNodeBounds(target);
+      if (!targetBounds) {
+        continue;
+      }
+      if (!(targetBounds.centerY < activeBounds.centerY)) {
+        continue;
+      }
+      var verticalGap = activeBounds.top - targetBounds.bottom;
+      if (!(verticalGap >= 0 && (ignoreMaxSearchDistance || verticalGap <= maxSearchDistance))) {
+        continue;
+      }
+      valid.push({
+        node: target,
+        bounds: targetBounds,
+        xDistance: Math.abs(activeBounds.centerX - targetBounds.centerX),
+        yDistance: Math.abs(activeBounds.top - targetBounds.top),
+      });
+    }
+
+    if (!valid.length) {
+      return null;
+    }
+
+    valid.sort(function (a, b) {
+      if (a.xDistance !== b.xDistance) {
+        return a.xDistance - b.xDistance;
+      }
+      return a.yDistance - b.yDistance;
+    });
+    return valid[0];
+  }
+
+  function chooseBelowTopByReferenceY(activeNode, activeBounds, allNodes, referenceY, maxSearchDistance) {
+    if (!isFinite(referenceY)) {
+      return null;
+    }
+    var valid = [];
+    for (var i = 0; i < allNodes.length; i += 1) {
+      var target = allNodes[i];
+      if (!target || target === activeNode || target.constructor === window.LGraphGroup) {
+        continue;
+      }
+      var targetBounds = getNodeBounds(target);
+      if (!targetBounds) {
+        continue;
+      }
+      if (!rangesOverlap(activeBounds.left, activeBounds.right, targetBounds.left, targetBounds.right, 0)) {
+        continue;
+      }
+      if (!(targetBounds.top >= referenceY)) {
+        continue;
+      }
+      var distance = targetBounds.top - referenceY;
+      if (!(distance >= 0 && distance <= maxSearchDistance)) {
+        continue;
+      }
+      valid.push({
+        node: target,
+        bounds: targetBounds,
+        distance: distance,
+      });
+    }
+    if (!valid.length) {
+      return null;
+    }
+    valid.sort(function (a, b) {
+      if (a.distance !== b.distance) {
+        return a.distance - b.distance;
+      }
+      return Math.abs(activeBounds.centerX - a.bounds.centerX) - Math.abs(activeBounds.centerX - b.bounds.centerX);
+    });
+    return valid[0];
+  }
+
+  function chooseAdjacentAboveBottomByReferenceY(activeNode, activeBounds, allNodes, referenceY, maxSearchDistance) {
+    if (!isFinite(referenceY)) {
+      return null;
+    }
+    var left = [];
+    var right = [];
+    for (var i = 0; i < allNodes.length; i += 1) {
+      var target = allNodes[i];
+      if (!target || target === activeNode || target.constructor === window.LGraphGroup) {
+        continue;
+      }
+      var targetBounds = getNodeBounds(target);
+      if (!targetBounds) {
+        continue;
+      }
+      var side = null;
+      var horizontalGap = 0;
+      if (targetBounds.centerX < activeBounds.centerX) {
+        side = "left";
+        horizontalGap = activeBounds.left - targetBounds.right;
+      } else if (targetBounds.centerX > activeBounds.centerX) {
+        side = "right";
+        horizontalGap = targetBounds.left - activeBounds.right;
+      } else {
+        continue;
+      }
+      // Treat overlap as immediate adjacency for vertical resize snapping.
+      var effectiveHorizontalGap = horizontalGap < 0 ? 0 : horizontalGap;
+      if (!(effectiveHorizontalGap <= maxSearchDistance)) {
+        continue;
+      }
+      if (!(targetBounds.bottom <= referenceY)) {
+        continue;
+      }
+      var verticalDelta = referenceY - targetBounds.bottom;
+      var candidate = {
+        node: target,
+        bounds: targetBounds,
+        side: side,
+        distance: verticalDelta,
+        horizontalGap: effectiveHorizontalGap,
+      };
+      if (side === "left") {
+        left.push(candidate);
+      } else {
+        right.push(candidate);
+      }
+    }
+
+    function sortCandidates(list) {
+      list.sort(function (a, b) {
+        if (a.distance !== b.distance) {
+          return a.distance - b.distance;
+        }
+        return a.horizontalGap - b.horizontalGap;
+      });
+      return list.length ? list[0] : null;
+    }
+
+    var leftBest = sortCandidates(left);
+    var rightBest = sortCandidates(right);
+    if (leftBest && rightBest) {
+      if (leftBest.distance !== rightBest.distance) {
+        return leftBest.distance < rightBest.distance ? leftBest : rightBest;
+      }
+      if (leftBest.horizontalGap !== rightBest.horizontalGap) {
+        return leftBest.horizontalGap <= rightBest.horizontalGap ? leftBest : rightBest;
+      }
+      return leftBest; // stable tie-breaker: left wins
+    }
+    return leftBest || rightBest || null;
+  }
+
+  function getNodeById(nodes, id) {
+    if (!nodes || id == null) {
+      return null;
+    }
+    for (var i = 0; i < nodes.length; i += 1) {
+      if (nodes[i] && nodes[i].id === id) {
+        return nodes[i];
+      }
+    }
+    return null;
+  }
+
+  function buildStickyYResizeCandidate(mode, activeBounds, yReferenceBounds, winnerBounds) {
+    if (!winnerBounds) {
+      return null;
+    }
+    if (mode === "below_top" || mode === "below_top_x_proximity") {
+      if (!(winnerBounds.centerY > activeBounds.centerY)) {
+        return null;
+      }
+      return {
+        targetBottom: winnerBounds.top,
+        delta: Math.abs(yReferenceBounds.bottom - winnerBounds.top),
+        mode: mode,
+      };
+    }
+    if (mode === "below_bottom_x_proximity") {
+      if (!(winnerBounds.centerY > activeBounds.centerY)) {
+        return null;
+      }
+      return {
+        targetBottom: winnerBounds.bottom,
+        delta: Math.abs(yReferenceBounds.bottom - winnerBounds.bottom),
+        mode: mode,
+      };
+    }
+    if (mode === "left_bottom") {
+      if (!(winnerBounds.centerX < activeBounds.centerX)) {
+        return null;
+      }
+      return {
+        targetBottom: winnerBounds.bottom,
+        delta: Math.abs(yReferenceBounds.bottom - winnerBounds.bottom),
+        mode: mode,
+      };
+    }
+    if (mode === "right_bottom") {
+      if (!(winnerBounds.centerX > activeBounds.centerX)) {
+        return null;
+      }
+      return {
+        targetBottom: winnerBounds.bottom,
+        delta: Math.abs(yReferenceBounds.bottom - winnerBounds.bottom),
+        mode: mode,
+      };
+    }
+    if (mode === "left_top_if_below") {
+      if (!(winnerBounds.centerX < activeBounds.centerX && winnerBounds.centerY > activeBounds.centerY)) {
+        return null;
+      }
+      return {
+        targetBottom: winnerBounds.top,
+        delta: Math.abs(yReferenceBounds.bottom - winnerBounds.top),
+        mode: mode,
+      };
+    }
+    if (mode === "right_top_if_below") {
+      if (!(winnerBounds.centerX > activeBounds.centerX && winnerBounds.centerY > activeBounds.centerY)) {
+        return null;
+      }
+      return {
+        targetBottom: winnerBounds.top,
+        delta: Math.abs(yReferenceBounds.bottom - winnerBounds.top),
+        mode: mode,
+      };
+    }
+    if (mode === "above_bottom") {
+      if (!(winnerBounds.centerY < activeBounds.centerY)) {
+        return null;
+      }
+      return {
+        targetBottom: winnerBounds.bottom,
+        delta: Math.abs(yReferenceBounds.bottom - winnerBounds.bottom),
+        mode: mode,
+      };
+    }
+    if (mode === "left_top") {
+      if (!(winnerBounds.centerX < activeBounds.centerX)) {
+        return null;
+      }
+      return {
+        targetBottom: winnerBounds.top,
+        delta: Math.abs(yReferenceBounds.bottom - winnerBounds.top),
+        mode: mode,
+      };
+    }
+    if (mode === "right_top") {
+      if (!(winnerBounds.centerX > activeBounds.centerX)) {
+        return null;
+      }
+      return {
+        targetBottom: winnerBounds.top,
+        delta: Math.abs(yReferenceBounds.bottom - winnerBounds.top),
+        mode: mode,
+      };
+    }
+    if (mode === "left_bottom_if_above") {
+      if (!(winnerBounds.centerX < activeBounds.centerX && winnerBounds.centerY < activeBounds.centerY)) {
+        return null;
+      }
+      return {
+        targetBottom: winnerBounds.bottom,
+        delta: Math.abs(yReferenceBounds.bottom - winnerBounds.bottom),
+        mode: mode,
+      };
+    }
+    if (mode === "right_bottom_if_above") {
+      if (!(winnerBounds.centerX > activeBounds.centerX && winnerBounds.centerY < activeBounds.centerY)) {
+        return null;
+      }
+      return {
+        targetBottom: winnerBounds.bottom,
+        delta: Math.abs(yReferenceBounds.bottom - winnerBounds.bottom),
+        mode: mode,
+      };
+    }
+    if (mode === "above_top_x_proximity") {
+      if (!(winnerBounds.centerY < activeBounds.centerY)) {
+        return null;
+      }
+      return {
+        targetBottom: winnerBounds.top,
+        delta: Math.abs(yReferenceBounds.bottom - winnerBounds.top),
+        mode: mode,
+      };
+    }
+    return null;
+  }
+
+  function getResizeYIntent(canvas, nodeId, currentBottom) {
+    if (!canvas || nodeId == null || !isFinite(currentBottom)) {
+      return "neutral";
+    }
+    var state = canvas.__blockSpaceResizeYIntentState;
+    if (!state || state.nodeId !== nodeId || !isFinite(state.prevBottom)) {
+      canvas.__blockSpaceResizeYIntentState = {
+        nodeId: nodeId,
+        prevBottom: currentBottom,
+        intent: "neutral",
+      };
+      return "neutral";
+    }
+    var delta = currentBottom - state.prevBottom;
+    state.prevBottom = currentBottom;
+    if (Math.abs(delta) <= 0.1) {
+      canvas.__blockSpaceResizeYIntentState = state;
+      return state.intent || "neutral";
+    }
+    state.intent = delta > 0 ? "down" : "up";
+    canvas.__blockSpaceResizeYIntentState = state;
+    return state.intent;
+  }
+
   function computeWinningXCandidate(activeBounds, winner, snapMargin, useLeftAlignOnly) {
     var winnerBounds = winner.bounds;
     if (useLeftAlignOnly) {
@@ -673,111 +1029,193 @@
     };
     status.yReference = yReferenceBounds.bottom;
 
-    function pickYResizeCandidate() {
+    var yIntent = getResizeYIntent(canvas, resizingNode.id, yReferenceBounds.bottom);
+
+    function pickYResizeCandidate(intent, referenceY) {
       var winner = null;
       var candidate = null;
 
-      // 1) Below.top
-      winner = chooseWinningTargetForAxis(
-        resizingNode,
-        yReferenceBounds,
-        nodes,
-        ySearchDistance,
-        "y",
-        "below",
-        null
-      );
-      if (winner) {
-        candidate = {
-          targetBottom: winner.bounds.top,
-          delta: Math.abs(yReferenceBounds.bottom - winner.bounds.top),
-          mode: "below_top",
-        };
-        return { winner: winner, candidate: candidate };
-      }
+      if (intent === "up") {
+        // 1) Above.bottom
+        winner = chooseWinningTargetForAxis(
+          resizingNode,
+          yReferenceBounds,
+          nodes,
+          ySearchDistance,
+          "y",
+          "above",
+          null
+        );
+        if (winner) {
+          candidate = {
+            targetBottom: winner.bounds.bottom,
+            delta: Math.abs(yReferenceBounds.bottom - winner.bounds.bottom),
+            mode: "above_bottom",
+          };
+          return { winner: winner, candidate: candidate };
+        }
 
-      // 2) Left.bottom
-      winner = chooseWinningTargetForAxis(
-        resizingNode,
-        bounds,
-        nodes,
-        xSearchDistance,
-        "x",
-        "left",
-        null
-      );
-      if (winner) {
-        candidate = {
-          targetBottom: winner.bounds.bottom,
-          delta: Math.abs(yReferenceBounds.bottom - winner.bounds.bottom),
-          mode: "left_bottom",
-        };
-        return { winner: winner, candidate: candidate };
-      }
+        // 2) Left.top
+        winner = chooseWinningTargetForAxis(
+          resizingNode,
+          bounds,
+          nodes,
+          xSearchDistance,
+          "x",
+          "left",
+          null
+        );
+        if (winner) {
+          candidate = {
+            targetBottom: winner.bounds.top,
+            delta: Math.abs(yReferenceBounds.bottom - winner.bounds.top),
+            mode: "left_top",
+          };
+          return { winner: winner, candidate: candidate };
+        }
 
-      // 3) Right.bottom
-      winner = chooseWinningTargetForAxis(
-        resizingNode,
-        bounds,
-        nodes,
-        xSearchDistance,
-        "x",
-        "right",
-        null
-      );
-      if (winner) {
-        candidate = {
-          targetBottom: winner.bounds.bottom,
-          delta: Math.abs(yReferenceBounds.bottom - winner.bounds.bottom),
-          mode: "right_bottom",
-        };
-        return { winner: winner, candidate: candidate };
-      }
+        // 3) Right.top
+        winner = chooseWinningTargetForAxis(
+          resizingNode,
+          bounds,
+          nodes,
+          xSearchDistance,
+          "x",
+          "right",
+          null
+        );
+        if (winner) {
+          candidate = {
+            targetBottom: winner.bounds.top,
+            delta: Math.abs(yReferenceBounds.bottom - winner.bounds.top),
+            mode: "right_top",
+          };
+          return { winner: winner, candidate: candidate };
+        }
 
-      // 4) Left.top (if left node is below current node center)
-      var leftBelowWinner = chooseWinningTargetForAxis(
-        resizingNode,
-        bounds,
-        nodes,
-        xSearchDistance,
-        "x",
-        "left",
-        null
-      );
-      if (leftBelowWinner && leftBelowWinner.bounds.centerY > bounds.centerY) {
-        candidate = {
-          targetBottom: leftBelowWinner.bounds.top,
-          delta: Math.abs(yReferenceBounds.bottom - leftBelowWinner.bounds.top),
-          mode: "left_top_if_below",
-        };
-        return { winner: leftBelowWinner, candidate: candidate };
-      }
+        // 4) Left.bottom (if left node is above current node center)
+        var leftAboveWinner = chooseWinningTargetForAxis(
+          resizingNode,
+          bounds,
+          nodes,
+          xSearchDistance,
+          "x",
+          "left",
+          null
+        );
+        if (leftAboveWinner && leftAboveWinner.bounds.centerY < bounds.centerY) {
+          candidate = {
+            targetBottom: leftAboveWinner.bounds.bottom,
+            delta: Math.abs(yReferenceBounds.bottom - leftAboveWinner.bounds.bottom),
+            mode: "left_bottom_if_above",
+          };
+          return { winner: leftAboveWinner, candidate: candidate };
+        }
 
-      // 5) Right.top (if right node is below current node center)
-      var rightBelowWinner = chooseWinningTargetForAxis(
-        resizingNode,
-        bounds,
-        nodes,
-        xSearchDistance,
-        "x",
-        "right",
-        null
-      );
-      if (rightBelowWinner && rightBelowWinner.bounds.centerY > bounds.centerY) {
-        candidate = {
-          targetBottom: rightBelowWinner.bounds.top,
-          delta: Math.abs(yReferenceBounds.bottom - rightBelowWinner.bounds.top),
-          mode: "right_top_if_below",
-        };
-        return { winner: rightBelowWinner, candidate: candidate };
+        // 5) Right.bottom (if right node is above current node center)
+        var rightAboveWinner = chooseWinningTargetForAxis(
+          resizingNode,
+          bounds,
+          nodes,
+          xSearchDistance,
+          "x",
+          "right",
+          null
+        );
+        if (rightAboveWinner && rightAboveWinner.bounds.centerY < bounds.centerY) {
+          candidate = {
+            targetBottom: rightAboveWinner.bounds.bottom,
+            delta: Math.abs(yReferenceBounds.bottom - rightAboveWinner.bounds.bottom),
+            mode: "right_bottom_if_above",
+          };
+          return { winner: rightAboveWinner, candidate: candidate };
+        }
+
+        winner = chooseAboveByXProximity(resizingNode, bounds, nodes, ySearchDistance, true);
+        if (winner) {
+          candidate = {
+            targetBottom: winner.bounds.top,
+            delta: Math.abs(yReferenceBounds.bottom - winner.bounds.top),
+            mode: "above_top_x_proximity",
+          };
+          return { winner: winner, candidate: candidate };
+        }
+      } else {
+        // 1) Top of any node below current reference Y.
+        winner = chooseBelowTopByReferenceY(
+          resizingNode,
+          bounds,
+          nodes,
+          referenceY,
+          ySearchDistance
+        );
+        if (winner) {
+          candidate = {
+            targetBottom: winner.bounds.top,
+            delta: Math.abs(yReferenceBounds.bottom - winner.bounds.top),
+            mode: "below_top",
+          };
+          return { winner: winner, candidate: candidate };
+        }
+
+        // 2) Bottom of any adjacent node above current reference Y.
+        winner = chooseAdjacentAboveBottomByReferenceY(
+          resizingNode,
+          bounds,
+          nodes,
+          referenceY,
+          xSearchDistance
+        );
+        if (winner) {
+          candidate = {
+            targetBottom: winner.bounds.bottom,
+            delta: Math.abs(yReferenceBounds.bottom - winner.bounds.bottom),
+            mode: winner.side === "left" ? "left_bottom" : "right_bottom",
+          };
+          return { winner: winner, candidate: candidate };
+        }
       }
 
       return { winner: null, candidate: null };
     }
 
-    var yResult = pickYResizeCandidate();
-    var yWinner = yResult.winner;
-    var yCandidate = yResult.candidate;
+    var yWinner = null;
+    var yCandidate = null;
+    var usedStickyYWinner = false;
+
+    var stickyY = canvas.__blockSpaceResizeYSticky;
+    if (
+      stickyY &&
+      stickyY.nodeId === resizingNode.id &&
+      stickyY.winnerId != null &&
+      stickyY.mode &&
+      stickyY.intent === yIntent
+    ) {
+      var stickyWinnerNode = getNodeById(nodes, stickyY.winnerId);
+      var stickyWinnerBounds = getNodeBounds(stickyWinnerNode);
+      var stickyCandidate = buildStickyYResizeCandidate(stickyY.mode, bounds, yReferenceBounds, stickyWinnerBounds);
+      // While dragging down, drop sticky winner once we move clearly past its snap target.
+      if (
+        stickyCandidate &&
+        yIntent === "down" &&
+        yReferenceBounds.bottom > stickyCandidate.targetBottom + thresholdCanvas
+      ) {
+        stickyCandidate = null;
+      }
+      if (stickyWinnerNode && stickyWinnerBounds && stickyCandidate) {
+        yWinner = { node: stickyWinnerNode, bounds: stickyWinnerBounds };
+        yCandidate = stickyCandidate;
+        usedStickyYWinner = true;
+      }
+    }
+
+    if (!yWinner) {
+      var yReferenceForWinner =
+        isFinite(canvas.__blockSpaceCursorY) ? Number(canvas.__blockSpaceCursorY) : yReferenceBounds.bottom;
+      var yResult = pickYResizeCandidate(yIntent, yReferenceForWinner);
+      yWinner = yResult.winner;
+      yCandidate = yResult.candidate;
+    }
 
     if (yWinner && yCandidate) {
       status.yWinner = yWinner.node
@@ -797,8 +1235,17 @@
           status.yReference = bounds.top + nextHeight;
         }
       }
+      canvas.__blockSpaceResizeYSticky = {
+        nodeId: resizingNode.id,
+        winnerId: yWinner.node && yWinner.node.id != null ? yWinner.node.id : null,
+        mode: yCandidate.mode,
+        intent: yIntent,
+      };
+    } else {
+      canvas.__blockSpaceResizeYSticky = null;
     }
-
+    status.ySticky = usedStickyYWinner;
+    status.yIntent = yIntent;
     status.didSnap = didSnap;
     canvas.__blockSpaceResizeDebugStatus = status;
 
@@ -928,6 +1375,7 @@
       "Y ref: " + yRef + "\n" +
       "Y target: " + yTarget + "\n" +
       "Y winner: " + (s.yWinner || "none") + "\n" +
+      "Y intent: " + (s.yIntent || "neutral") + "\n" +
       "Y mode: " + (s.yMode || "-") + "\n" +
       "Y Delta/Threshold: " + yDelta + " / " + yThreshold + "\n" +
       "Y did snap: " + (s.yDidSnap ? "true" : "false") + "\n" +
@@ -947,6 +1395,11 @@
     } else if (event && typeof event.clientX === "number") {
       this.__blockSpaceCursorX = event.clientX;
     }
+    if (event && typeof event.canvasY === "number") {
+      this.__blockSpaceCursorY = event.canvasY;
+    } else if (event && typeof event.clientY === "number") {
+      this.__blockSpaceCursorY = event.clientY;
+    }
 
     var resizingNode = this.resizing_node || resizingNodeBefore;
     if (
@@ -965,6 +1418,9 @@
     renderResizeDebugHud(this);
     this.__blockSpacePrevResizeSize = null;
     this.__blockSpaceResizeAxisLock = null;
+    this.__blockSpacePrevResizeYSnapTarget = null;
+    this.__blockSpaceResizeYSticky = null;
+    this.__blockSpaceResizeYIntentState = null;
 
     var activeNode = getActiveDraggedNode(this, event);
     if (!activeNode || activeNode.constructor === window.LGraphGroup) {
@@ -1054,6 +1510,9 @@
     this.__blockSpaceDragAxisLock = null;
     this.__blockSpacePrevResizeSize = null;
     this.__blockSpaceResizeAxisLock = null;
+    this.__blockSpacePrevResizeYSnapTarget = null;
+    this.__blockSpaceResizeYSticky = null;
+    this.__blockSpaceResizeYIntentState = null;
     this.__blockSpaceResizeDebugStatus = null;
     renderResizeDebugHud(this);
     return result;
