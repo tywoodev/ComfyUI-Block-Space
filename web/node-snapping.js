@@ -14,14 +14,14 @@
   var DEFAULT_MOVE_SNAP_STRENGTH = 1.0;
   var DEFAULT_RESIZE_SNAP_STRENGTH = 1.8;
   var DEFAULT_HIGHLIGHT_ENABLED = true;
-  var DEFAULT_HIGHLIGHT_COLOR = "#57b1ff";
+  var DEFAULT_HIGHLIGHT_COLOR = "#1a3a6b";
   var DEFAULT_FEEDBACK_ENABLED = true;
   var DEFAULT_FEEDBACK_PULSE_MS = 160;
   var DEFAULT_FEEDBACK_BADGE_MS = 260;
   var DEFAULT_FEEDBACK_BADGE_COOLDOWN_MS = 200;
-  var DEFAULT_FEEDBACK_COLOR_X = "#57b1ff";
-  var DEFAULT_FEEDBACK_COLOR_Y = "#8dff57";
-  var DEFAULT_FEEDBACK_COLOR_XY = "#b57cff";
+  var DEFAULT_FEEDBACK_COLOR_X = "#1a3a6b";
+  var DEFAULT_FEEDBACK_COLOR_Y = "#b57cff";
+  var DEFAULT_FEEDBACK_COLOR_XY = "#1a6b35";
   var DEFAULT_FEEDBACK_BADGE_BG = "#0f172a";
   var DEFAULT_FEEDBACK_BADGE_TEXT = "#e5f1ff";
   var V_SNAP_MARGIN_VISUAL_MULTIPLIER = 1.75;
@@ -1543,11 +1543,19 @@
     if (!canvas || !badge || !badge.node || !badge.el) {
       return;
     }
-    var bounds = getNodeBounds(badge.node);
-    if (!bounds) {
-      return;
+    var cursorX = Number(canvas.__blockSpaceCursorX);
+    var cursorY = Number(canvas.__blockSpaceCursorY);
+    var client = null;
+    if (isFinite(cursorX) && isFinite(cursorY)) {
+      client = graphToClient(canvas, cursorX + 10, cursorY - 14);
     }
-    var client = graphToClient(canvas, bounds.right - 6, bounds.top + 4);
+    if (!client) {
+      var bounds = getNodeBounds(badge.node);
+      if (!bounds) {
+        return;
+      }
+      client = graphToClient(canvas, bounds.right - 6, bounds.top + 4);
+    }
     if (!client) {
       return;
     }
@@ -1612,7 +1620,7 @@
         badge.expiresAt = now + badgeMs;
       }
       badge.el.textContent = "SNAP " + payload.axisLabel;
-      badge.el.style.background = getFeedbackBadgeBgColor();
+      badge.el.style.background = payload.color;
       badge.el.style.color = getFeedbackBadgeTextColor();
       badge.el.style.opacity = "0";
       badge.el.style.transform = "translate3d(0,-4px,0)";
