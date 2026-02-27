@@ -476,6 +476,9 @@
     if (!isFinite(referenceY)) {
       return null;
     }
+    // For down-intent resizing, never consider a "below" target that is above
+    // the node's current bottom edge, even if cursor reference jitters upward.
+    var floorY = Math.max(referenceY, activeBounds && isFinite(activeBounds.bottom) ? activeBounds.bottom : referenceY);
     var valid = [];
     for (var i = 0; i < allNodes.length; i += 1) {
       var target = allNodes[i];
@@ -489,10 +492,10 @@
       if (!rangesOverlap(activeBounds.left, activeBounds.right, targetBounds.left, targetBounds.right, 0)) {
         continue;
       }
-      if (!(targetBounds.top >= referenceY)) {
+      if (!(targetBounds.top >= floorY)) {
         continue;
       }
-      var distance = targetBounds.top - referenceY;
+      var distance = targetBounds.top - floorY;
       if (!(distance >= 0 && distance <= maxSearchDistance)) {
         continue;
       }
@@ -599,7 +602,7 @@
     return null;
   }
 
-  function buildStickyYResizeCandidate(mode, activeBounds, yReferenceBounds, winnerBounds) {
+  function buildStickyYResizeCandidate(mode, activeBounds, yReferenceBounds, winnerBounds, snapMargin) {
     if (!winnerBounds) {
       return null;
     }
@@ -608,8 +611,8 @@
         return null;
       }
       return {
-        targetBottom: winnerBounds.top,
-        delta: Math.abs(yReferenceBounds.bottom - winnerBounds.top),
+        targetBottom: winnerBounds.top - snapMargin,
+        delta: Math.abs(yReferenceBounds.bottom - (winnerBounds.top - snapMargin)),
         mode: mode,
       };
     }
@@ -891,16 +894,42 @@
     return [minWidth, minHeight];
   }
 
-  function computeWinningXResizeCandidate(activeBounds, winner, snapMargin, useTopBottomFallback) {
+  function computeWinningXResizeCandidate(
+    activeBounds,
+    winner,
+    snapMargin,
+    useTopBottomFallback,
+    enableTopBottomHalfSpan
+  ) {
     var winnerBounds = winner.bounds;
     if (useTopBottomFallback) {
       // For top/bottom fallback during resize, align right edge to right edge.
       var fallbackTargetRight = winnerBounds.right;
-      return {
+      var fallbackCandidate = {
         targetRight: fallbackTargetRight,
         delta: Math.abs(activeBounds.right - fallbackTargetRight),
         mode: "top_bottom_right_align",
       };
+
+      if (!enableTopBottomHalfSpan) {
+        return fallbackCandidate;
+      }
+
+      var winnerWidth = Math.max(0, winnerBounds.right - winnerBounds.left);
+      var spanTargetRight = winnerBounds.left + winnerWidth * 0.5 - snapMargin * 0.5;
+      var spanCandidate = {
+        targetRight: spanTargetRight,
+        delta: Math.abs(activeBounds.right - spanTargetRight),
+        mode: "top_bottom_half_span",
+      };
+
+      if (
+        spanCandidate.delta < fallbackCandidate.delta ||
+        spanCandidate.delta === fallbackCandidate.delta
+      ) {
+        return spanCandidate;
+      }
+      return fallbackCandidate;
     }
 
     var side = winner.direction || "left";
@@ -954,7 +983,7 @@
     };
   }
 
-  function applyResizeSnapping(canvas, resizingNode, resizeAxisLock) {
+  function applyResizeSnapping(canvas, resizingNode, resizeAxisLock, resizeDelta) {
     if (
       !canvas ||
       !resizingNode ||
@@ -1045,7 +1074,13 @@
       );
     }
     var xCandidate = xWinner
-      ? computeWinningXResizeCandidate(bounds, xWinner, hSnapMargin, xUseTopBottomFallback)
+      ? computeWinningXResizeCandidate(
+          bounds,
+          xWinner,
+          hSnapMargin,
+          xUseTopBottomFallback,
+          xUseTopBottomFallback && resizeDelta && resizeDelta.dw > 0
+        )
       : null;
 
     var minSize = getNodeMinSize(resizingNode);
@@ -1119,8 +1154,8 @@
         );
         if (winner) {
           candidate = {
-            targetBottom: winner.bounds.top,
-            delta: Math.abs(yReferenceBounds.bottom - winner.bounds.top),
+            targetBottom: winner.bounds.top - vSnapMargin,
+            delta: Math.abs(yReferenceBounds.bottom - (winner.bounds.top - vSnapMargin)),
             mode: "below_top",
           };
           return { winner: winner, candidate: candidate };
@@ -1162,7 +1197,13 @@
     ) {
       var stickyWinnerNode = getNodeById(nodes, stickyY.winnerId);
       var stickyWinnerBounds = getNodeBounds(stickyWinnerNode);
-      var stickyCandidate = buildStickyYResizeCandidate(stickyY.mode, bounds, yReferenceBounds, stickyWinnerBounds);
+      var stickyCandidate = buildStickyYResizeCandidate(
+        stickyY.mode,
+        bounds,
+        yReferenceBounds,
+        stickyWinnerBounds,
+        vSnapMargin
+      );
       // While dragging down, drop sticky winner once we move clearly past its snap target.
       if (
         stickyCandidate &&
@@ -1749,7 +1790,7 @@
     ) {
       var resizeDelta = getResizeDelta(this, resizingNode);
       var resizeAxisLock = resolveResizeAxisLock(this, resizeDelta);
-      applyResizeSnapping(this, resizingNode, resizeAxisLock);
+      applyResizeSnapping(this, resizingNode, resizeAxisLock, resizeDelta);
       updateSnapFeedback(this);
       renderResizeDebugHud(this);
       return result;
