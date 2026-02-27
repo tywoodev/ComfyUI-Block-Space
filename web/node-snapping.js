@@ -352,7 +352,8 @@
     axis,
     primary,
     fallback,
-    ignoreMaxSearchDistance
+    ignoreMaxSearchDistance,
+    xSortByGap
   ) {
     if (primary == null) {
       primary = axis === "y" ? "above" : "left";
@@ -388,6 +389,18 @@
     }
 
     valid.sort(function (a, b) {
+      if (axis === "x" && xSortByGap) {
+        var aGap = a.direction === "left" ? activeBounds.left - a.bounds.right : a.bounds.left - activeBounds.right;
+        var bGap = b.direction === "left" ? activeBounds.left - b.bounds.right : b.bounds.left - activeBounds.right;
+        if (aGap !== bGap) {
+          return aGap - bGap;
+        }
+        var aVertical = Math.abs(activeBounds.centerY - a.bounds.centerY);
+        var bVertical = Math.abs(activeBounds.centerY - b.bounds.centerY);
+        if (aVertical !== bVertical) {
+          return aVertical - bVertical;
+        }
+      }
       return a.distance - b.distance;
     });
 
@@ -933,6 +946,15 @@
     }
 
     var side = winner.direction || "left";
+    if (side === "left") {
+      var winnerWidth = Math.max(0, winnerBounds.right - winnerBounds.left);
+      var widthMatchTargetRight = activeBounds.left + winnerWidth;
+      return {
+        targetRight: widthMatchTargetRight,
+        delta: Math.abs(activeBounds.right - widthMatchTargetRight),
+        mode: "left_width_match",
+      };
+    }
     var marginTargetRight = side === "left" ? winnerBounds.right + snapMargin : winnerBounds.left - snapMargin;
     var alignTargetRight = winnerBounds.left;
     var marginDelta = Math.abs(activeBounds.right - marginTargetRight);
@@ -1032,7 +1054,8 @@
       "x",
       "left",
       null,
-      false
+      false,
+      true
     );
     var xUseTopBottomFallback = false;
     if (!xWinner) {
@@ -1070,7 +1093,22 @@
         "x",
         "right",
         null,
-        false
+        false,
+        true
+      );
+    }
+    // Final fallback for X resize winner: always use left node with relaxed distance.
+    if (!xWinner) {
+      xWinner = chooseWinningTargetForAxis(
+        resizingNode,
+        xReferenceBounds,
+        nodes,
+        xSearchDistance,
+        "x",
+        "left",
+        null,
+        true,
+        true
       );
     }
     var xCandidate = xWinner
