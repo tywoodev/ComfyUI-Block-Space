@@ -1,6 +1,6 @@
 import { app } from "/scripts/app.js";
 
-const ASSET_VERSION = "2026-02-26-comfyui-node-snapping-phase-1-v49";
+const ASSET_VERSION = "2026-02-27-comfyui-node-snapping-dim-memory-v1";
 
 const CONNECTOR_DEFAULTS = {
   flowColor: "#ff00ae",
@@ -27,6 +27,7 @@ const NODE_SNAP_DEFAULTS = {
   vMarginPx: 60,
   moveStrength: 1.0,
   resizeStrength: 1.8,
+  dimensionTolerancePx: 12,
   highlightEnabled: true,
   highlightColor: "#57b1ff",
   highlightWidth: 3,
@@ -286,6 +287,10 @@ function applyNodeSnapSettings() {
         getSettingValue("comfyuiBlockSpace.nodeSnap.resizeStrength", NODE_SNAP_DEFAULTS.resizeStrength),
         NODE_SNAP_DEFAULTS.resizeStrength
       ),
+      dimensionTolerancePx: asNumber(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.dimensionTolerancePx", NODE_SNAP_DEFAULTS.dimensionTolerancePx),
+        NODE_SNAP_DEFAULTS.dimensionTolerancePx
+      ),
       highlightEnabled: asBool(
         getSettingValue("comfyuiBlockSpace.nodeSnap.highlightEnabled", NODE_SNAP_DEFAULTS.highlightEnabled),
         NODE_SNAP_DEFAULTS.highlightEnabled
@@ -478,6 +483,14 @@ function registerNodeSnapSettings() {
     name: "Block Space: Resize Snap Strength",
     type: "number",
     defaultValue: NODE_SNAP_DEFAULTS.resizeStrength,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.dimensionTolerancePx",
+    name: "Block Space: Dimension Tolerance (px)",
+    type: "number",
+    defaultValue: NODE_SNAP_DEFAULTS.dimensionTolerancePx,
+    attrs: { min: 1, max: 64, step: 1 },
     onChange: applyNodeSnapSettings,
   });
   addSetting({

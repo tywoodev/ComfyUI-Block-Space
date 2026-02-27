@@ -13,6 +13,7 @@
   var DEFAULT_V_SNAP_MARGIN = 60;
   var DEFAULT_MOVE_SNAP_STRENGTH = 1.0;
   var DEFAULT_RESIZE_SNAP_STRENGTH = 1.8;
+  var DEFAULT_DIMENSION_TOLERANCE_PX = 12;
   var DEFAULT_HIGHLIGHT_ENABLED = true;
   var DEFAULT_HIGHLIGHT_COLOR = "#1a3a6b";
   var DEFAULT_FEEDBACK_ENABLED = true;
@@ -31,7 +32,9 @@
   var SNAP_MOUSEUP_GRACE_MS = 220;
   var SNAP_MOUSEUP_TOLERANCE_MULTIPLIER = 1.8;
   var DEBUG_HUD_ID = "block-space-resize-debug-hud";
+  var DEBUG_MEMORY_HUD_ID = "block-space-resize-memory-debug-hud";
   var SNAP_BADGE_LAYER_ID = "block-space-snap-badge-layer";
+  var DIMENSION_ASSOC_LAYER_ID = "block-space-dimension-association-layer";
 
   var originalProcessMouseMove = window.LGraphCanvas.prototype.processMouseMove;
   var originalProcessMouseUp = window.LGraphCanvas.prototype.processMouseUp;
@@ -112,6 +115,15 @@
       0.1,
       5,
       DEFAULT_RESIZE_SNAP_STRENGTH
+    );
+  }
+
+  function getDimensionTolerancePx() {
+    return clampNumber(
+      getSettingValue("comfyuiBlockSpace.nodeSnap.dimensionTolerancePx", DEFAULT_DIMENSION_TOLERANCE_PX),
+      1,
+      64,
+      DEFAULT_DIMENSION_TOLERANCE_PX
     );
   }
 
@@ -238,6 +250,158 @@
       return [];
     }
     return canvas.graph._nodes;
+  }
+
+  function buildDimensionClusters(samples, tolerancePx) {
+    if (!Array.isArray(samples) || !samples.length) {
+      return [];
+    }
+    var sorted = samples
+      .map(function (entry) {
+        if (entry && typeof entry === "object") {
+          var n = Number(entry.value);
+          if (isFinite(n) && n > 0) {
+            return { value: n, node: entry.node || null };
+          }
+          return null;
+        }
+        var numeric = Number(entry);
+        if (isFinite(numeric) && numeric > 0) {
+          return { value: numeric, node: null };
+        }
+        return null;
+      })
+      .filter(function (entry) { return !!entry; })
+      .sort(function (a, b) { return a.value - b.value; });
+    if (!sorted.length) {
+      return [];
+    }
+
+    var clusters = [];
+    for (var i = 0; i < sorted.length; i += 1) {
+      var sample = sorted[i];
+      var value = sample.value;
+      var cluster = clusters.length ? clusters[clusters.length - 1] : null;
+      if (!cluster || Math.abs(value - cluster.center) > tolerancePx) {
+        clusters.push({
+          center: value,
+          count: 1,
+          min: value,
+          max: value,
+          sum: value,
+          members: [sample],
+        });
+        continue;
+      }
+      cluster.count += 1;
+      cluster.sum += value;
+      cluster.center = cluster.sum / cluster.count;
+      cluster.min = Math.min(cluster.min, value);
+      cluster.max = Math.max(cluster.max, value);
+      cluster.members.push(sample);
+    }
+    return clusters;
+  }
+
+  function pickDominantCluster(clusters) {
+    if (!Array.isArray(clusters) || !clusters.length) {
+      return null;
+    }
+    var winner = clusters[0];
+    for (var i = 1; i < clusters.length; i += 1) {
+      var cluster = clusters[i];
+      if (cluster.count > winner.count) {
+        winner = cluster;
+        continue;
+      }
+      if (cluster.count === winner.count && cluster.center > winner.center) {
+        winner = cluster;
+      }
+    }
+    return winner;
+  }
+
+  function pickDirectionalCluster(clusters, currentDim, intent) {
+    if (!Array.isArray(clusters) || !clusters.length || !isFinite(currentDim)) {
+      return null;
+    }
+    var filtered = [];
+    for (var i = 0; i < clusters.length; i += 1) {
+      var c = clusters[i];
+      if (!c || !isFinite(c.center)) {
+        continue;
+      }
+      if (intent === "expand") {
+        if (c.center > currentDim) {
+          filtered.push(c);
+        }
+      } else if (intent === "shrink") {
+        if (c.center < currentDim) {
+          filtered.push(c);
+        }
+      } else {
+        filtered.push(c);
+      }
+    }
+    if (!filtered.length) {
+      return null;
+    }
+    filtered.sort(function (a, b) {
+      var da = Math.abs(a.center - currentDim);
+      var db = Math.abs(b.center - currentDim);
+      if (da !== db) {
+        return da - db;
+      }
+      if (a.count !== b.count) {
+        return b.count - a.count;
+      }
+      return b.center - a.center;
+    });
+    return filtered[0];
+  }
+
+  function ensureResizeDimensionMemory(canvas, resizingNode) {
+    if (!canvas || !resizingNode) {
+      return null;
+    }
+    var memory = canvas.__blockSpaceResizeDimensionMemory;
+    if (memory && memory.nodeId === resizingNode.id) {
+      return memory;
+    }
+
+    var nodes = getGraphNodes(canvas);
+    var widthSamples = [];
+    var heightSamples = [];
+    for (var i = 0; i < nodes.length; i += 1) {
+      var node = nodes[i];
+      if (!node || node === resizingNode || node.constructor === window.LGraphGroup) {
+        continue;
+      }
+      var bounds = getNodeBounds(node);
+      if (!bounds) {
+        continue;
+      }
+      var width = bounds.right - bounds.left;
+      var height = bounds.bottom - bounds.top;
+      if (isFinite(width) && width > 0) {
+        widthSamples.push({ value: width, node: node });
+      }
+      if (isFinite(height) && height > 0) {
+        heightSamples.push({ value: height, node: node });
+      }
+    }
+
+    var tolerancePx = getDimensionTolerancePx();
+    memory = {
+      nodeId: resizingNode.id,
+      tolerancePx: tolerancePx,
+      widthClusters: buildDimensionClusters(widthSamples, tolerancePx),
+      heightClusters: buildDimensionClusters(heightSamples, tolerancePx),
+      sampleNodeCount: Math.max(widthSamples.length, heightSamples.length),
+      createdAt: Date.now(),
+    };
+    canvas.__blockSpaceResizeDimensionMemory = memory;
+    return memory;
   }
 
   function getDragDelta(canvas, event) {
@@ -1019,281 +1183,79 @@
     if (!bounds) {
       return false;
     }
-    var xReferenceBounds = {
-      left: bounds.right,
-      right: bounds.right,
-      top: bounds.top,
-      bottom: bounds.bottom,
-      centerX: bounds.right,
-      centerY: bounds.centerY,
-    };
-    var yReferenceBounds = {
-      left: bounds.left,
-      right: bounds.right,
-      top: bounds.bottom,
-      bottom: bounds.bottom,
-      centerX: bounds.centerX,
-      centerY: bounds.bottom,
-    };
 
-    var hSnapMargin = getHSnapMargin();
-    var vSnapMargin = getVSnapMargin();
-    var xSearchDistance = hSnapMargin * RESIZE_SEARCH_DISTANCE_MULTIPLIER;
-    var ySearchDistance = vSnapMargin * RESIZE_SEARCH_DISTANCE_MULTIPLIER;
     var thresholdCanvas =
       (SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(canvas))) * getResizeSnapStrength();
-    var thresholdXCanvas = thresholdCanvas;
-    var nodes = getGraphNodes(canvas);
-    var didSnap = false;
-
-    var xWinner = chooseWinningTargetForAxis(
-      resizingNode,
-      xReferenceBounds,
-      nodes,
-      xSearchDistance,
-      "x",
-      "left",
-      null,
-      false,
-      true
-    );
-    var xUseTopBottomFallback = false;
-    if (!xWinner) {
-      xWinner = chooseWinningTargetForAxis(
-        resizingNode,
-        bounds,
-        nodes,
-        ySearchDistance,
-        "y",
-        "above",
-        null,
-        true
-      );
-      xUseTopBottomFallback = !!xWinner;
-    }
-    if (!xWinner) {
-      xWinner = chooseWinningTargetForAxis(
-        resizingNode,
-        bounds,
-        nodes,
-        ySearchDistance,
-        "y",
-        "below",
-        null,
-        true
-      );
-      xUseTopBottomFallback = !!xWinner;
-    }
-    if (!xWinner) {
-      xWinner = chooseWinningTargetForAxis(
-        resizingNode,
-        xReferenceBounds,
-        nodes,
-        xSearchDistance,
-        "x",
-        "right",
-        null,
-        false,
-        true
-      );
-    }
-    // Final fallback for X resize winner: always use left node with relaxed distance.
-    if (!xWinner) {
-      xWinner = chooseWinningTargetForAxis(
-        resizingNode,
-        xReferenceBounds,
-        nodes,
-        xSearchDistance,
-        "x",
-        "left",
-        null,
-        true,
-        true
-      );
-    }
-    var xCandidate = xWinner
-      ? computeWinningXResizeCandidate(
-          bounds,
-          xWinner,
-          hSnapMargin,
-          xUseTopBottomFallback,
-          xUseTopBottomFallback && resizeDelta && resizeDelta.dw > 0
-        )
-      : null;
-
+    var currentWidth = bounds.right - bounds.left;
+    var currentHeight = bounds.bottom - bounds.top;
+    var xIntent = resizeDelta && resizeDelta.dw > 0 ? "expand" : resizeDelta && resizeDelta.dw < 0 ? "shrink" : "steady";
+    var yIntent = resizeDelta && resizeDelta.dh > 0 ? "expand" : resizeDelta && resizeDelta.dh < 0 ? "shrink" : "steady";
     var minSize = getNodeMinSize(resizingNode);
-    // Always allow X/Y resize snapping regardless of axis lock.
-    var applyX = true;
-    var applyY = true;
+    var memory = ensureResizeDimensionMemory(canvas, resizingNode);
+    var widthWinner = memory ? pickDirectionalCluster(memory.widthClusters, currentWidth, xIntent) : null;
+    var heightWinner = memory ? pickDirectionalCluster(memory.heightClusters, currentHeight, yIntent) : null;
+    var didSnap = false;
     var status = {
       active: true,
       node: resizingNode && (resizingNode.title || resizingNode.type || resizingNode.id),
       axis: resizeAxisLock || "both",
-      xWinner: xWinner && xWinner.node ? (xWinner.node.title || xWinner.node.type || xWinner.node.id) : null,
-      xMode: xCandidate ? xCandidate.mode : null,
-      xDelta: xCandidate ? xCandidate.delta : null,
-      xThreshold: thresholdXCanvas,
-      xReference: bounds.right,
-      xTarget: xCandidate ? xCandidate.targetRight : null,
-      yWinner: null,
-      yMode: null,
-      yDelta: null,
+      xWinner: widthWinner ? Math.round(widthWinner.center * 100) / 100 : null,
+      xMode: widthWinner ? "dimension_memory" : null,
+      xDelta: widthWinner ? Math.abs(currentWidth - widthWinner.center) : null,
+      xThreshold: thresholdCanvas,
+      xReference: currentWidth,
+      xTarget: widthWinner ? widthWinner.center : null,
+      yWinner: heightWinner ? Math.round(heightWinner.center * 100) / 100 : null,
+      yMode: heightWinner ? "dimension_memory" : null,
+      yDelta: heightWinner ? Math.abs(currentHeight - heightWinner.center) : null,
       yThreshold: thresholdCanvas,
-      yReference: yReferenceBounds.bottom,
-      yTarget: null,
+      yReference: currentHeight,
+      yTarget: heightWinner ? heightWinner.center : null,
+      xIntent: xIntent,
+      yIntent: yIntent,
+      dimTolerancePx: memory ? memory.tolerancePx : null,
+      dimSampleNodeCount: memory ? memory.sampleNodeCount : 0,
+      dimWidthClusterCount: memory && memory.widthClusters ? memory.widthClusters.length : 0,
+      dimHeightClusterCount: memory && memory.heightClusters ? memory.heightClusters.length : 0,
+      dimWidthWinnerCount: widthWinner ? widthWinner.count : 0,
+      dimHeightWinnerCount: heightWinner ? heightWinner.count : 0,
+      dimWidthClusters: memory && memory.widthClusters ? memory.widthClusters : [],
+      dimHeightClusters: memory && memory.heightClusters ? memory.heightClusters : [],
+      xWinnerNodes: widthWinner && Array.isArray(widthWinner.members)
+        ? widthWinner.members
+            .map(function (m) { return m && m.node ? m.node : null; })
+            .filter(function (n) { return !!n; })
+        : [],
+      yWinnerNodes: heightWinner && Array.isArray(heightWinner.members)
+        ? heightWinner.members
+            .map(function (m) { return m && m.node ? m.node : null; })
+            .filter(function (n) { return !!n; })
+        : [],
       xDidSnap: false,
       yDidSnap: false,
       didSnap: false,
     };
 
-    if (xWinner && applyX) {
-      if (xCandidate.delta <= thresholdXCanvas) {
-        var currentWidth = Number(resizingNode.size[0]) || 0;
-        var nextWidth = Math.max(minSize[0], xCandidate.targetRight - bounds.left);
-        status.xTarget = xCandidate.targetRight;
-        if (isFinite(nextWidth) && Math.abs(nextWidth - currentWidth) > 0.01) {
-          resizingNode.size[0] = nextWidth;
-          didSnap = true;
-          status.xDidSnap = true;
-          status.xReference = bounds.left + nextWidth;
-        }
+    if (widthWinner && status.xDelta <= thresholdCanvas) {
+      var nextWidth = Math.max(minSize[0], widthWinner.center);
+      if (isFinite(nextWidth) && Math.abs(nextWidth - currentWidth) > 0.01) {
+        resizingNode.size[0] = nextWidth;
+        didSnap = true;
+        status.xDidSnap = true;
+        status.xReference = nextWidth;
       }
     }
 
-    // Recompute bounds after potential width snap before evaluating Y.
-    bounds = getNodeBounds(resizingNode) || bounds;
-    yReferenceBounds = {
-      left: bounds.left,
-      right: bounds.right,
-      top: bounds.bottom,
-      bottom: bounds.bottom,
-      centerX: bounds.centerX,
-      centerY: bounds.bottom,
-    };
-    status.yReference = yReferenceBounds.bottom;
-
-    var yIntent = getResizeYIntent(canvas, resizingNode.id, yReferenceBounds.bottom);
-
-    function pickYResizeCandidate(intent, referenceY) {
-      var winner = null;
-      var candidate = null;
-
-      if (intent === "up") {
-        // Up-intent Y resize snapping disabled to avoid jumpy winner churn.
-        return { winner: null, candidate: null };
-      } else {
-        // 1) Top of any node below current reference Y.
-        winner = chooseBelowTopByReferenceY(
-          resizingNode,
-          bounds,
-          nodes,
-          referenceY,
-          ySearchDistance
-        );
-        if (winner) {
-          candidate = {
-            targetBottom: winner.bounds.top - vSnapMargin,
-            delta: Math.abs(yReferenceBounds.bottom - (winner.bounds.top - vSnapMargin)),
-            mode: "below_top",
-          };
-          return { winner: winner, candidate: candidate };
-        }
-
-        // 2) Bottom of any adjacent node above current reference Y.
-        winner = chooseAdjacentAboveBottomByReferenceY(
-          resizingNode,
-          bounds,
-          nodes,
-          referenceY,
-          xSearchDistance
-        );
-        if (winner) {
-          candidate = {
-            targetBottom: winner.bounds.bottom,
-            delta: Math.abs(yReferenceBounds.bottom - winner.bounds.bottom),
-            mode: winner.side === "left" ? "left_bottom" : "right_bottom",
-          };
-          return { winner: winner, candidate: candidate };
-        }
-      }
-
-      return { winner: null, candidate: null };
-    }
-
-    var yWinner = null;
-    var yCandidate = null;
-    var usedStickyYWinner = false;
-
-    var stickyY = canvas.__blockSpaceResizeYSticky;
-    if (
-      stickyY &&
-      stickyY.nodeId === resizingNode.id &&
-      stickyY.winnerId != null &&
-      stickyY.mode &&
-      stickyY.intent === yIntent &&
-      yIntent !== "up"
-    ) {
-      var stickyWinnerNode = getNodeById(nodes, stickyY.winnerId);
-      var stickyWinnerBounds = getNodeBounds(stickyWinnerNode);
-      var stickyCandidate = buildStickyYResizeCandidate(
-        stickyY.mode,
-        bounds,
-        yReferenceBounds,
-        stickyWinnerBounds,
-        vSnapMargin
-      );
-      // While dragging down, drop sticky winner once we move clearly past its snap target.
-      if (
-        stickyCandidate &&
-        yIntent === "down" &&
-        yReferenceBounds.bottom > stickyCandidate.targetBottom + thresholdCanvas
-      ) {
-        stickyCandidate = null;
-      }
-      if (stickyWinnerNode && stickyWinnerBounds && stickyCandidate) {
-        yWinner = { node: stickyWinnerNode, bounds: stickyWinnerBounds };
-        yCandidate = stickyCandidate;
-        usedStickyYWinner = true;
+    if (heightWinner && status.yDelta <= thresholdCanvas) {
+      var nextHeight = Math.max(minSize[1], heightWinner.center);
+      if (isFinite(nextHeight) && Math.abs(nextHeight - currentHeight) > 0.01) {
+        resizingNode.size[1] = nextHeight;
+        didSnap = true;
+        status.yDidSnap = true;
+        status.yReference = nextHeight;
       }
     }
 
-    if (!yWinner) {
-      var yReferenceForWinner =
-        isFinite(canvas.__blockSpaceCursorY) ? Number(canvas.__blockSpaceCursorY) : yReferenceBounds.bottom;
-      var yResult = pickYResizeCandidate(yIntent, yReferenceForWinner);
-      yWinner = yResult.winner;
-      yCandidate = yResult.candidate;
-    }
-
-    if (yWinner && yCandidate) {
-      status.yWinner = yWinner.node
-        ? (yWinner.node.title || yWinner.node.type || yWinner.node.id)
-        : null;
-      status.yMode = yCandidate.mode;
-      status.yDelta = yCandidate.delta;
-      status.yTarget = yCandidate.targetBottom;
-
-      if (applyY && yCandidate.delta <= thresholdCanvas) {
-        var currentHeight = Number(resizingNode.size[1]) || 0;
-        var nextHeight = Math.max(minSize[1], yCandidate.targetBottom - bounds.top);
-        if (isFinite(nextHeight) && Math.abs(nextHeight - currentHeight) > 0.01) {
-          resizingNode.size[1] = nextHeight;
-          didSnap = true;
-          status.yDidSnap = true;
-          status.yReference = bounds.top + nextHeight;
-        }
-      }
-      canvas.__blockSpaceResizeYSticky = {
-        nodeId: resizingNode.id,
-        winnerId: yWinner.node && yWinner.node.id != null ? yWinner.node.id : null,
-        mode: yCandidate.mode,
-        intent: yIntent,
-      };
-    } else {
-      canvas.__blockSpaceResizeYSticky = null;
-    }
-    status.ySticky = usedStickyYWinner;
-    status.yIntent = yIntent;
     status.didSnap = didSnap;
     canvas.__blockSpaceResizeDebugStatus = status;
 
@@ -1304,10 +1266,10 @@
         threshold: thresholdCanvas,
         xDidSnap: !!status.xDidSnap,
         yDidSnap: !!status.yDidSnap,
-        xTargetRight: status.xDidSnap ? status.xTarget : null,
-        yTargetBottom: status.yDidSnap ? status.yTarget : null,
+        xTargetRight: status.xDidSnap ? bounds.left + status.xTarget : null,
+        yTargetBottom: status.yDidSnap ? bounds.top + status.yTarget : null,
       });
-      triggerSnapFeedback(canvas, resizingNode, !!status.xDidSnap, !!status.yDidSnap);
+      triggerSnapFeedback(canvas, resizingNode, !!status.xDidSnap, !!status.yDidSnap, false);
       canvas.dirty_canvas = true;
       canvas.dirty_bgcanvas = true;
     }
@@ -1443,7 +1405,7 @@
     }
 
     if (appliedX || appliedY) {
-      triggerSnapFeedback(canvas, node, appliedX, appliedY);
+      triggerSnapFeedback(canvas, node, appliedX, appliedY, snap.kind === "move");
       canvas.dirty_canvas = true;
       canvas.dirty_bgcanvas = true;
       return true;
@@ -1477,6 +1439,112 @@
     var layer = document.getElementById(SNAP_BADGE_LAYER_ID);
     if (layer && layer.parentNode) {
       layer.parentNode.removeChild(layer);
+    }
+  }
+
+  function ensureDimensionAssociationLayer() {
+    var layer = document.getElementById(DIMENSION_ASSOC_LAYER_ID);
+    if (layer) {
+      return layer;
+    }
+    layer = document.createElement("div");
+    layer.id = DIMENSION_ASSOC_LAYER_ID;
+    layer.style.position = "fixed";
+    layer.style.left = "0";
+    layer.style.top = "0";
+    layer.style.width = "100vw";
+    layer.style.height = "100vh";
+    layer.style.pointerEvents = "none";
+    layer.style.zIndex = "9999";
+    document.body.appendChild(layer);
+    return layer;
+  }
+
+  function clearDimensionAssociationLayer() {
+    var layer = document.getElementById(DIMENSION_ASSOC_LAYER_ID);
+    if (layer && layer.parentNode) {
+      layer.parentNode.removeChild(layer);
+    }
+  }
+
+  function renderDimensionAssociationHighlights(canvas, status) {
+    var layer = ensureDimensionAssociationLayer();
+    if (!layer) {
+      return;
+    }
+    while (layer.firstChild) {
+      layer.removeChild(layer.firstChild);
+    }
+    if (!canvas || !status || !status.active) {
+      return;
+    }
+
+    var scale = getCanvasScale(canvas);
+    var titleH = Number(window.LiteGraph && window.LiteGraph.NODE_TITLE_HEIGHT) || 24;
+    var titlePx = Math.max(0, Math.round(titleH * scale));
+    var borderW = 2;
+
+    function appendLine(x, y, w, h, color) {
+      var line = document.createElement("div");
+      line.style.position = "fixed";
+      line.style.left = Math.round(x) + "px";
+      line.style.top = Math.round(y) + "px";
+      line.style.width = Math.max(0, Math.round(w)) + "px";
+      line.style.height = Math.max(0, Math.round(h)) + "px";
+      line.style.border = borderW + "px dotted " + color;
+      line.style.boxSizing = "border-box";
+      line.style.opacity = "0.95";
+      layer.appendChild(line);
+    }
+
+    var nodeMap = {};
+
+    function trackNode(node, axis) {
+      if (!node || node.id == null) {
+        return;
+      }
+      var key = String(node.id);
+      if (!nodeMap[key]) {
+        nodeMap[key] = { node: node, width: false, height: false };
+      }
+      nodeMap[key][axis] = true;
+    }
+
+    var xNodes = status.xDidSnap ? (status.xWinnerNodes || []) : [];
+    var yNodes = status.yDidSnap ? (status.yWinnerNodes || []) : [];
+    for (var i = 0; i < xNodes.length; i += 1) {
+      trackNode(xNodes[i], "width");
+    }
+    for (var j = 0; j < yNodes.length; j += 1) {
+      trackNode(yNodes[j], "height");
+    }
+
+    for (var key in nodeMap) {
+      if (!Object.prototype.hasOwnProperty.call(nodeMap, key)) {
+        continue;
+      }
+      var item = nodeMap[key];
+      var bounds = getNodeBounds(item.node);
+      if (!bounds) {
+        continue;
+      }
+      var topLeft = graphToClient(canvas, bounds.left, bounds.top);
+      if (!topLeft) {
+        continue;
+      }
+      var left = topLeft.x;
+      var top = topLeft.y - titlePx;
+      var width = Math.max(0, (bounds.right - bounds.left) * scale);
+      var height = Math.max(0, (bounds.bottom - bounds.top) * scale + titlePx);
+
+      if (item.width) {
+        appendLine(left, top, borderW, height, "#3b82f6");
+        appendLine(left + width - borderW, top, borderW, height, "#3b82f6");
+      }
+      if (item.height) {
+        appendLine(left, top, width, borderW, "#39ff14");
+        appendLine(left, top + height - borderW, width, borderW, "#39ff14");
+      }
     }
   }
 
@@ -1563,7 +1631,7 @@
     badge.el.style.top = Math.round(client.y) + "px";
   }
 
-  function triggerSnapFeedback(canvas, node, xDidSnap, yDidSnap) {
+  function triggerSnapFeedback(canvas, node, xDidSnap, yDidSnap, showBadge) {
     if (!canvas || !node || !getFeedbackEnabled()) {
       return;
     }
@@ -1601,7 +1669,7 @@
     var badgeKey = nodeId + ":" + payload.axisLabel;
     var cooldownMs = getFeedbackBadgeCooldownMs();
     var lastAt = Number(state.badgeLastAtByKey[badgeKey]) || 0;
-    if (now - lastAt >= cooldownMs) {
+    if ((showBadge !== false) && now - lastAt >= cooldownMs) {
       state.badgeLastAtByKey[badgeKey] = now;
       var badgeMs = getFeedbackBadgeMs();
       var layer = ensureSnapBadgeLayer();
@@ -1765,8 +1833,104 @@
     return hud;
   }
 
+  function ensureResizeMemoryDebugHud() {
+    var hud = document.getElementById(DEBUG_MEMORY_HUD_ID);
+    if (hud) {
+      return hud;
+    }
+    hud = document.createElement("div");
+    hud.id = DEBUG_MEMORY_HUD_ID;
+    hud.style.position = "fixed";
+    hud.style.top = "200px";
+    hud.style.right = "24px";
+    hud.style.zIndex = "9999";
+    hud.style.width = "380px";
+    hud.style.maxHeight = "65vh";
+    hud.style.overflow = "auto";
+    hud.style.padding = "10px 12px";
+    hud.style.background = "rgba(10,12,16,0.9)";
+    hud.style.border = "1px solid rgba(120,170,255,0.35)";
+    hud.style.borderRadius = "8px";
+    hud.style.color = "#d6e8ff";
+    hud.style.font = "12px/1.35 monospace";
+    hud.style.whiteSpace = "pre-line";
+    hud.style.pointerEvents = "none";
+    hud.textContent = "Resize memory: idle";
+    document.body.appendChild(hud);
+    return hud;
+  }
+
+  function formatClusterSummary(clusters) {
+    if (!Array.isArray(clusters) || !clusters.length) {
+      return "[]";
+    }
+    var parts = [];
+    for (var i = 0; i < clusters.length; i += 1) {
+      var c = clusters[i];
+      parts.push(
+        "[c=" +
+          Number(c.center).toFixed(2) +
+          ", n=" +
+          (c.count || 0) +
+          ", min=" +
+          Number(c.min).toFixed(2) +
+          ", max=" +
+          Number(c.max).toFixed(2) +
+          "]"
+      );
+    }
+    return parts.join("\n");
+  }
+
+  function renderResizeMemoryDebugHud(canvas) {
+    var hud = ensureResizeMemoryDebugHud();
+    if (!hud) {
+      return;
+    }
+    var s = canvas && canvas.__blockSpaceResizeDebugStatus;
+    if (!s || !s.active) {
+      hud.textContent = "Resize memory: idle";
+      return;
+    }
+    var xRef = s.xReference == null ? "-" : Number(s.xReference).toFixed(2);
+    var yRef = s.yReference == null ? "-" : Number(s.yReference).toFixed(2);
+    var xTarget = s.xTarget == null ? "-" : Number(s.xTarget).toFixed(2);
+    var yTarget = s.yTarget == null ? "-" : Number(s.yTarget).toFixed(2);
+    var xDelta = s.xDelta == null ? "-" : Number(s.xDelta).toFixed(2);
+    var yDelta = s.yDelta == null ? "-" : Number(s.yDelta).toFixed(2);
+    var xThreshold = s.xThreshold == null ? "-" : Number(s.xThreshold).toFixed(2);
+    var yThreshold = s.yThreshold == null ? "-" : Number(s.yThreshold).toFixed(2);
+    hud.textContent =
+      "Resize memory: active\n" +
+      "Node: " + (s.node || "-") + "\n" +
+      "Axis: " + (s.axis || "-") + "\n" +
+      "X intent: " + (s.xIntent || "steady") + "\n" +
+      "Y intent: " + (s.yIntent || "steady") + "\n" +
+      "Tolerance px: " + (s.dimTolerancePx != null ? s.dimTolerancePx : "-") + "\n" +
+      "Sample nodes: " + (s.dimSampleNodeCount != null ? s.dimSampleNodeCount : 0) + "\n" +
+      "\nX (width)\n" +
+      "Current: " + xRef + "\n" +
+      "Winner: " + (s.xWinner != null ? Number(s.xWinner).toFixed(2) : "none") + "\n" +
+      "Winner count: " + (s.dimWidthWinnerCount != null ? s.dimWidthWinnerCount : 0) + "\n" +
+      "Target: " + xTarget + "\n" +
+      "Delta/Threshold: " + xDelta + " / " + xThreshold + "\n" +
+      "Did snap: " + (s.xDidSnap ? "true" : "false") + "\n" +
+      "Clusters (" + (s.dimWidthClusterCount || 0) + "):\n" +
+      formatClusterSummary(s.dimWidthClusters) + "\n" +
+      "\nY (height)\n" +
+      "Current: " + yRef + "\n" +
+      "Winner: " + (s.yWinner != null ? Number(s.yWinner).toFixed(2) : "none") + "\n" +
+      "Winner count: " + (s.dimHeightWinnerCount != null ? s.dimHeightWinnerCount : 0) + "\n" +
+      "Target: " + yTarget + "\n" +
+      "Delta/Threshold: " + yDelta + " / " + yThreshold + "\n" +
+      "Did snap: " + (s.yDidSnap ? "true" : "false") + "\n" +
+      "Clusters (" + (s.dimHeightClusterCount || 0) + "):\n" +
+      formatClusterSummary(s.dimHeightClusters);
+  }
+
   function renderResizeDebugHud(canvas) {
     var hud = ensureResizeDebugHud();
+    renderResizeMemoryDebugHud(canvas);
     if (!hud) {
       return;
     }
@@ -1776,9 +1940,11 @@
         : "-";
     var s = canvas && canvas.__blockSpaceResizeDebugStatus;
     if (!s || !s.active) {
+      clearDimensionAssociationLayer();
       hud.textContent = "Resize snap: idle\nCursor X: " + cursorX;
       return;
     }
+    renderDimensionAssociationHighlights(canvas, s);
     var delta = s.xDelta == null ? "-" : Number(s.xDelta).toFixed(2);
     var threshold = s.xThreshold == null ? "-" : Number(s.xThreshold).toFixed(2);
     var xRef = s.xReference == null ? "-" : Number(s.xReference).toFixed(2);
@@ -1845,6 +2011,7 @@
     renderResizeDebugHud(this);
     this.__blockSpacePrevResizeSize = null;
     this.__blockSpaceResizeAxisLock = null;
+    this.__blockSpaceResizeDimensionMemory = null;
     this.__blockSpacePrevResizeYSnapTarget = null;
     this.__blockSpaceResizeYSticky = null;
     this.__blockSpaceResizeYIntentState = null;
@@ -1961,6 +2128,7 @@
     this.__blockSpaceDragAxisLock = null;
     this.__blockSpacePrevResizeSize = null;
     this.__blockSpaceResizeAxisLock = null;
+    this.__blockSpaceResizeDimensionMemory = null;
     this.__blockSpacePrevResizeYSnapTarget = null;
     this.__blockSpaceResizeYSticky = null;
     this.__blockSpaceResizeYIntentState = null;
