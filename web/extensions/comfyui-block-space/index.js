@@ -1,6 +1,6 @@
 import { app } from "/scripts/app.js";
 
-const ASSET_VERSION = "2026-02-26-comfyui-node-snapping-phase-1-v36";
+const ASSET_VERSION = "2026-02-26-comfyui-node-snapping-phase-1-v40";
 
 const CONNECTOR_DEFAULTS = {
   flowColor: "#ff00ae",
@@ -30,6 +30,15 @@ const NODE_SNAP_DEFAULTS = {
   highlightEnabled: true,
   highlightColor: "#57b1ff",
   highlightWidth: 3,
+  feedbackEnabled: true,
+  feedbackPulseMs: 160,
+  feedbackBadgeMs: 260,
+  feedbackBadgeCooldownMs: 200,
+  feedbackColorX: "#57b1ff",
+  feedbackColorY: "#8dff57",
+  feedbackColorXY: "#b57cff",
+  feedbackBadgeBg: "#0f172a",
+  feedbackBadgeText: "#e5f1ff",
 };
 
 function asBool(value, fallback) {
@@ -289,6 +298,42 @@ function applyNodeSnapSettings() {
         getSettingValue("comfyuiBlockSpace.nodeSnap.highlightWidth", NODE_SNAP_DEFAULTS.highlightWidth),
         NODE_SNAP_DEFAULTS.highlightWidth
       ),
+      feedbackEnabled: asBool(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackEnabled", NODE_SNAP_DEFAULTS.feedbackEnabled),
+        NODE_SNAP_DEFAULTS.feedbackEnabled
+      ),
+      feedbackPulseMs: asNumber(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackPulseMs", NODE_SNAP_DEFAULTS.feedbackPulseMs),
+        NODE_SNAP_DEFAULTS.feedbackPulseMs
+      ),
+      feedbackBadgeMs: asNumber(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeMs", NODE_SNAP_DEFAULTS.feedbackBadgeMs),
+        NODE_SNAP_DEFAULTS.feedbackBadgeMs
+      ),
+      feedbackBadgeCooldownMs: asNumber(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeCooldownMs", NODE_SNAP_DEFAULTS.feedbackBadgeCooldownMs),
+        NODE_SNAP_DEFAULTS.feedbackBadgeCooldownMs
+      ),
+      feedbackColorX: asColor(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorX", NODE_SNAP_DEFAULTS.feedbackColorX),
+        NODE_SNAP_DEFAULTS.feedbackColorX
+      ),
+      feedbackColorY: asColor(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorY", NODE_SNAP_DEFAULTS.feedbackColorY),
+        NODE_SNAP_DEFAULTS.feedbackColorY
+      ),
+      feedbackColorXY: asColor(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorXY", NODE_SNAP_DEFAULTS.feedbackColorXY),
+        NODE_SNAP_DEFAULTS.feedbackColorXY
+      ),
+      feedbackBadgeBg: asColor(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeBg", NODE_SNAP_DEFAULTS.feedbackBadgeBg),
+        NODE_SNAP_DEFAULTS.feedbackBadgeBg
+      ),
+      feedbackBadgeText: asColor(
+        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeText", NODE_SNAP_DEFAULTS.feedbackBadgeText),
+        NODE_SNAP_DEFAULTS.feedbackBadgeText
+      ),
     });
   }
 }
@@ -454,6 +499,69 @@ function registerNodeSnapSettings() {
     name: "Block Space: Node Snap Highlight Width",
     type: "number",
     defaultValue: NODE_SNAP_DEFAULTS.highlightWidth,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.feedbackEnabled",
+    name: "Block Space: Snap Feedback Enabled",
+    type: "boolean",
+    defaultValue: NODE_SNAP_DEFAULTS.feedbackEnabled,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.feedbackPulseMs",
+    name: "Block Space: Snap Pulse Duration (ms)",
+    type: "number",
+    defaultValue: NODE_SNAP_DEFAULTS.feedbackPulseMs,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.feedbackBadgeMs",
+    name: "Block Space: Snap Badge Duration (ms)",
+    type: "number",
+    defaultValue: NODE_SNAP_DEFAULTS.feedbackBadgeMs,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.feedbackBadgeCooldownMs",
+    name: "Block Space: Snap Badge Cooldown (ms)",
+    type: "number",
+    defaultValue: NODE_SNAP_DEFAULTS.feedbackBadgeCooldownMs,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.feedbackColorX",
+    name: "Block Space: Snap Color X",
+    type: "text",
+    defaultValue: NODE_SNAP_DEFAULTS.feedbackColorX,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.feedbackColorY",
+    name: "Block Space: Snap Color Y",
+    type: "text",
+    defaultValue: NODE_SNAP_DEFAULTS.feedbackColorY,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.feedbackColorXY",
+    name: "Block Space: Snap Color XY",
+    type: "text",
+    defaultValue: NODE_SNAP_DEFAULTS.feedbackColorXY,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.feedbackBadgeBg",
+    name: "Block Space: Snap Badge Background",
+    type: "text",
+    defaultValue: NODE_SNAP_DEFAULTS.feedbackBadgeBg,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.feedbackBadgeText",
+    name: "Block Space: Snap Badge Text Color",
+    type: "text",
+    defaultValue: NODE_SNAP_DEFAULTS.feedbackBadgeText,
     onChange: applyNodeSnapSettings,
   });
 }

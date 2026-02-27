@@ -15,10 +15,23 @@
   var DEFAULT_RESIZE_SNAP_STRENGTH = 1.8;
   var DEFAULT_HIGHLIGHT_ENABLED = true;
   var DEFAULT_HIGHLIGHT_COLOR = "#57b1ff";
+  var DEFAULT_FEEDBACK_ENABLED = true;
+  var DEFAULT_FEEDBACK_PULSE_MS = 160;
+  var DEFAULT_FEEDBACK_BADGE_MS = 260;
+  var DEFAULT_FEEDBACK_BADGE_COOLDOWN_MS = 200;
+  var DEFAULT_FEEDBACK_COLOR_X = "#57b1ff";
+  var DEFAULT_FEEDBACK_COLOR_Y = "#8dff57";
+  var DEFAULT_FEEDBACK_COLOR_XY = "#b57cff";
+  var DEFAULT_FEEDBACK_BADGE_BG = "#0f172a";
+  var DEFAULT_FEEDBACK_BADGE_TEXT = "#e5f1ff";
+  var V_SNAP_MARGIN_VISUAL_MULTIPLIER = 1.75;
   var WINNER_HIGHLIGHT_BG_FALLBACK = "#3a3f47";
   var DEBUG_RESIZE_SNAPPING = false;
   var RESIZE_SEARCH_DISTANCE_MULTIPLIER = 4;
+  var SNAP_MOUSEUP_GRACE_MS = 220;
+  var SNAP_MOUSEUP_TOLERANCE_MULTIPLIER = 1.8;
   var DEBUG_HUD_ID = "block-space-resize-debug-hud";
+  var SNAP_BADGE_LAYER_ID = "block-space-snap-badge-layer";
 
   var originalProcessMouseMove = window.LGraphCanvas.prototype.processMouseMove;
   var originalProcessMouseUp = window.LGraphCanvas.prototype.processMouseUp;
@@ -72,7 +85,7 @@
   }
 
   function getVSnapMargin() {
-    return clampNumber(
+    var base = clampNumber(
       getSettingValue(
         "comfyuiBlockSpace.nodeSnap.vMarginPx",
         getSettingValue("comfyuiBlockSpace.nodeSnap.marginPx", DEFAULT_V_SNAP_MARGIN)
@@ -81,6 +94,7 @@
       500,
       DEFAULT_V_SNAP_MARGIN
     );
+    return clampNumber(base * V_SNAP_MARGIN_VISUAL_MULTIPLIER, 0, 1000, DEFAULT_V_SNAP_MARGIN);
   }
 
   function getMoveSnapStrength() {
@@ -108,6 +122,62 @@
   function getHighlightColor() {
     var value = getSettingValue("comfyuiBlockSpace.nodeSnap.highlightColor", DEFAULT_HIGHLIGHT_COLOR);
     return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_HIGHLIGHT_COLOR;
+  }
+
+  function getFeedbackEnabled() {
+    return !!getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackEnabled", DEFAULT_FEEDBACK_ENABLED);
+  }
+
+  function getFeedbackPulseMs() {
+    return clampNumber(
+      getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackPulseMs", DEFAULT_FEEDBACK_PULSE_MS),
+      60,
+      3000,
+      DEFAULT_FEEDBACK_PULSE_MS
+    );
+  }
+
+  function getFeedbackBadgeMs() {
+    return clampNumber(
+      getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeMs", DEFAULT_FEEDBACK_BADGE_MS),
+      80,
+      5000,
+      DEFAULT_FEEDBACK_BADGE_MS
+    );
+  }
+
+  function getFeedbackBadgeCooldownMs() {
+    return clampNumber(
+      getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeCooldownMs", DEFAULT_FEEDBACK_BADGE_COOLDOWN_MS),
+      0,
+      5000,
+      DEFAULT_FEEDBACK_BADGE_COOLDOWN_MS
+    );
+  }
+
+  function getFeedbackColorX() {
+    var value = getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorX", DEFAULT_FEEDBACK_COLOR_X);
+    return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_COLOR_X;
+  }
+
+  function getFeedbackColorY() {
+    var value = getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorY", DEFAULT_FEEDBACK_COLOR_Y);
+    return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_COLOR_Y;
+  }
+
+  function getFeedbackColorXY() {
+    var value = getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorXY", DEFAULT_FEEDBACK_COLOR_XY);
+    return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_COLOR_XY;
+  }
+
+  function getFeedbackBadgeBgColor() {
+    var value = getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeBg", DEFAULT_FEEDBACK_BADGE_BG);
+    return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_BADGE_BG;
+  }
+
+  function getFeedbackBadgeTextColor() {
+    var value = getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeText", DEFAULT_FEEDBACK_BADGE_TEXT);
+    return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_BADGE_TEXT;
   }
 
   function getNodeBounds(node) {
@@ -1036,110 +1106,8 @@
       var candidate = null;
 
       if (intent === "up") {
-        // 1) Above.bottom
-        winner = chooseWinningTargetForAxis(
-          resizingNode,
-          yReferenceBounds,
-          nodes,
-          ySearchDistance,
-          "y",
-          "above",
-          null
-        );
-        if (winner) {
-          candidate = {
-            targetBottom: winner.bounds.bottom,
-            delta: Math.abs(yReferenceBounds.bottom - winner.bounds.bottom),
-            mode: "above_bottom",
-          };
-          return { winner: winner, candidate: candidate };
-        }
-
-        // 2) Left.top
-        winner = chooseWinningTargetForAxis(
-          resizingNode,
-          bounds,
-          nodes,
-          xSearchDistance,
-          "x",
-          "left",
-          null
-        );
-        if (winner) {
-          candidate = {
-            targetBottom: winner.bounds.top,
-            delta: Math.abs(yReferenceBounds.bottom - winner.bounds.top),
-            mode: "left_top",
-          };
-          return { winner: winner, candidate: candidate };
-        }
-
-        // 3) Right.top
-        winner = chooseWinningTargetForAxis(
-          resizingNode,
-          bounds,
-          nodes,
-          xSearchDistance,
-          "x",
-          "right",
-          null
-        );
-        if (winner) {
-          candidate = {
-            targetBottom: winner.bounds.top,
-            delta: Math.abs(yReferenceBounds.bottom - winner.bounds.top),
-            mode: "right_top",
-          };
-          return { winner: winner, candidate: candidate };
-        }
-
-        // 4) Left.bottom (if left node is above current node center)
-        var leftAboveWinner = chooseWinningTargetForAxis(
-          resizingNode,
-          bounds,
-          nodes,
-          xSearchDistance,
-          "x",
-          "left",
-          null
-        );
-        if (leftAboveWinner && leftAboveWinner.bounds.centerY < bounds.centerY) {
-          candidate = {
-            targetBottom: leftAboveWinner.bounds.bottom,
-            delta: Math.abs(yReferenceBounds.bottom - leftAboveWinner.bounds.bottom),
-            mode: "left_bottom_if_above",
-          };
-          return { winner: leftAboveWinner, candidate: candidate };
-        }
-
-        // 5) Right.bottom (if right node is above current node center)
-        var rightAboveWinner = chooseWinningTargetForAxis(
-          resizingNode,
-          bounds,
-          nodes,
-          xSearchDistance,
-          "x",
-          "right",
-          null
-        );
-        if (rightAboveWinner && rightAboveWinner.bounds.centerY < bounds.centerY) {
-          candidate = {
-            targetBottom: rightAboveWinner.bounds.bottom,
-            delta: Math.abs(yReferenceBounds.bottom - rightAboveWinner.bounds.bottom),
-            mode: "right_bottom_if_above",
-          };
-          return { winner: rightAboveWinner, candidate: candidate };
-        }
-
-        winner = chooseAboveByXProximity(resizingNode, bounds, nodes, ySearchDistance, true);
-        if (winner) {
-          candidate = {
-            targetBottom: winner.bounds.top,
-            delta: Math.abs(yReferenceBounds.bottom - winner.bounds.top),
-            mode: "above_top_x_proximity",
-          };
-          return { winner: winner, candidate: candidate };
-        }
+        // Up-intent Y resize snapping disabled to avoid jumpy winner churn.
+        return { winner: null, candidate: null };
       } else {
         // 1) Top of any node below current reference Y.
         winner = chooseBelowTopByReferenceY(
@@ -1189,7 +1157,8 @@
       stickyY.nodeId === resizingNode.id &&
       stickyY.winnerId != null &&
       stickyY.mode &&
-      stickyY.intent === yIntent
+      stickyY.intent === yIntent &&
+      yIntent !== "up"
     ) {
       var stickyWinnerNode = getNodeById(nodes, stickyY.winnerId);
       var stickyWinnerBounds = getNodeBounds(stickyWinnerNode);
@@ -1250,6 +1219,16 @@
     canvas.__blockSpaceResizeDebugStatus = status;
 
     if (didSnap) {
+      rememberRecentSnap(canvas, {
+        kind: "resize",
+        nodeId: resizingNode.id,
+        threshold: thresholdCanvas,
+        xDidSnap: !!status.xDidSnap,
+        yDidSnap: !!status.yDidSnap,
+        xTargetRight: status.xDidSnap ? status.xTarget : null,
+        yTargetBottom: status.yDidSnap ? status.yTarget : null,
+      });
+      triggerSnapFeedback(canvas, resizingNode, !!status.xDidSnap, !!status.yDidSnap);
       canvas.dirty_canvas = true;
       canvas.dirty_bgcanvas = true;
     }
@@ -1274,6 +1253,7 @@
   }
 
   function resetPersistedHighlightArtifacts(canvas) {
+    clearSnapFeedbackState(canvas, true);
     if (!canvas) {
       return;
     }
@@ -1283,6 +1263,9 @@
     }
     var normalizedHighlight = String(getHighlightColor() || "").trim().toLowerCase();
     var normalizedFallbackBg = WINNER_HIGHLIGHT_BG_FALLBACK.toLowerCase();
+    var normalizedFeedbackX = normalizeColor(getFeedbackColorX());
+    var normalizedFeedbackY = normalizeColor(getFeedbackColorY());
+    var normalizedFeedbackXY = normalizeColor(getFeedbackColorXY());
     var changed = false;
     for (var i = 0; i < nodes.length; i += 1) {
       var node = nodes[i];
@@ -1291,7 +1274,10 @@
       }
       if (
         Object.prototype.hasOwnProperty.call(node, "boxcolor") &&
-        String(node.boxcolor || "").trim().toLowerCase() === normalizedHighlight
+        (normalizeColor(node.boxcolor) === normalizedHighlight ||
+          normalizeColor(node.boxcolor) === normalizedFeedbackX ||
+          normalizeColor(node.boxcolor) === normalizedFeedbackY ||
+          normalizeColor(node.boxcolor) === normalizedFeedbackXY)
       ) {
         delete node.boxcolor;
         changed = true;
@@ -1313,6 +1299,359 @@
   function setWinnerHighlight(canvas, winnerNode) {
     // Winner tinting is disabled for stability; keep this as a cleanup hook only.
     clearSnapVisual(canvas);
+  }
+
+  function rememberRecentSnap(canvas, snap) {
+    if (!canvas || !snap) {
+      return;
+    }
+    snap.at = Date.now();
+    canvas.__blockSpaceRecentSnap = snap;
+  }
+
+  function maybeCommitSnapOnMouseUp(canvas, nodeHint) {
+    if (!canvas) {
+      return false;
+    }
+    var snap = canvas.__blockSpaceRecentSnap;
+    if (!snap || !snap.at || Date.now() - snap.at > SNAP_MOUSEUP_GRACE_MS) {
+      return false;
+    }
+
+    var node = nodeHint;
+    if (!node || (snap.nodeId != null && node.id !== snap.nodeId)) {
+      node = getNodeById(getGraphNodes(canvas), snap.nodeId);
+    }
+    if (!node || node.constructor === window.LGraphGroup || !node.pos || !node.size) {
+      return false;
+    }
+
+    var bounds = getNodeBounds(node);
+    if (!bounds) {
+      return false;
+    }
+    var tolerance = Math.max(2, (Number(snap.threshold) || 0) * SNAP_MOUSEUP_TOLERANCE_MULTIPLIER);
+    var appliedX = false;
+    var appliedY = false;
+
+    if (snap.kind === "move") {
+      if (snap.xDidSnap && typeof snap.xTarget === "number" && Math.abs(bounds.left - snap.xTarget) <= tolerance) {
+        node.pos[0] = snap.xTarget;
+        appliedX = true;
+      }
+      if (snap.yDidSnap && typeof snap.yTarget === "number" && Math.abs(bounds.top - snap.yTarget) <= tolerance) {
+        node.pos[1] = snap.yTarget;
+        appliedY = true;
+      }
+    } else if (snap.kind === "resize") {
+      var minSize = getNodeMinSize(node);
+      if (
+        snap.xDidSnap &&
+        typeof snap.xTargetRight === "number" &&
+        Math.abs(bounds.right - snap.xTargetRight) <= tolerance
+      ) {
+        node.size[0] = Math.max(minSize[0], snap.xTargetRight - bounds.left);
+        appliedX = true;
+      }
+      if (
+        snap.yDidSnap &&
+        typeof snap.yTargetBottom === "number" &&
+        Math.abs(bounds.bottom - snap.yTargetBottom) <= tolerance
+      ) {
+        node.size[1] = Math.max(minSize[1], snap.yTargetBottom - bounds.top);
+        appliedY = true;
+      }
+    }
+
+    if (appliedX || appliedY) {
+      triggerSnapFeedback(canvas, node, appliedX, appliedY);
+      canvas.dirty_canvas = true;
+      canvas.dirty_bgcanvas = true;
+      return true;
+    }
+    return false;
+  }
+
+  function normalizeColor(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function ensureSnapBadgeLayer() {
+    var layer = document.getElementById(SNAP_BADGE_LAYER_ID);
+    if (layer) {
+      return layer;
+    }
+    layer = document.createElement("div");
+    layer.id = SNAP_BADGE_LAYER_ID;
+    layer.style.position = "fixed";
+    layer.style.left = "0";
+    layer.style.top = "0";
+    layer.style.width = "100vw";
+    layer.style.height = "100vh";
+    layer.style.pointerEvents = "none";
+    layer.style.zIndex = "10000";
+    document.body.appendChild(layer);
+    return layer;
+  }
+
+  function removeSnapBadgeLayer() {
+    var layer = document.getElementById(SNAP_BADGE_LAYER_ID);
+    if (layer && layer.parentNode) {
+      layer.parentNode.removeChild(layer);
+    }
+  }
+
+  function ensureSnapFeedbackState(canvas) {
+    if (!canvas) {
+      return null;
+    }
+    if (!canvas.__blockSpaceSnapFeedbackState) {
+      canvas.__blockSpaceSnapFeedbackState = {
+        pulses: {},
+        badges: [],
+        badgeLastAtByKey: {},
+        badgeSingleton: null,
+      };
+    }
+    return canvas.__blockSpaceSnapFeedbackState;
+  }
+
+  function graphToClient(canvas, x, y) {
+    if (!canvas || !canvas.canvas) {
+      return null;
+    }
+    var rect = canvas.canvas.getBoundingClientRect();
+    var scale = getCanvasScale(canvas);
+    var offset = canvas.ds && canvas.ds.offset ? canvas.ds.offset : [0, 0];
+    return {
+      x: rect.left + (x + (Number(offset[0]) || 0)) * scale,
+      y: rect.top + (y + (Number(offset[1]) || 0)) * scale,
+    };
+  }
+
+  function buildSnapFeedbackPayload(xDidSnap, yDidSnap) {
+    if (!xDidSnap && !yDidSnap) {
+      return null;
+    }
+    if (xDidSnap && yDidSnap) {
+      return { axisLabel: "XY", color: getFeedbackColorXY() };
+    }
+    if (xDidSnap) {
+      return { axisLabel: "X", color: getFeedbackColorX() };
+    }
+    return { axisLabel: "Y", color: getFeedbackColorY() };
+  }
+
+  function createSnapBadgeElement(axisLabel) {
+    var el = document.createElement("div");
+    el.textContent = "SNAP " + axisLabel;
+    el.style.position = "fixed";
+    el.style.padding = "3px 8px";
+    el.style.borderRadius = "999px";
+    el.style.font = "600 11px/1.2 monospace";
+    el.style.letterSpacing = "0.2px";
+    el.style.background = getFeedbackBadgeBgColor();
+    el.style.color = getFeedbackBadgeTextColor();
+    el.style.border = "1px solid rgba(255,255,255,0.22)";
+    el.style.boxShadow = "0 4px 12px rgba(0,0,0,0.28)";
+    el.style.opacity = "0";
+    el.style.transform = "translate3d(0,-4px,0)";
+    el.style.transition = "opacity 90ms ease, transform 90ms ease";
+    return el;
+  }
+
+  function positionSnapBadge(canvas, badge) {
+    if (!canvas || !badge || !badge.node || !badge.el) {
+      return;
+    }
+    var bounds = getNodeBounds(badge.node);
+    if (!bounds) {
+      return;
+    }
+    var client = graphToClient(canvas, bounds.right - 6, bounds.top + 4);
+    if (!client) {
+      return;
+    }
+    badge.el.style.left = Math.round(client.x) + "px";
+    badge.el.style.top = Math.round(client.y) + "px";
+  }
+
+  function triggerSnapFeedback(canvas, node, xDidSnap, yDidSnap) {
+    if (!canvas || !node || !getFeedbackEnabled()) {
+      return;
+    }
+    var payload = buildSnapFeedbackPayload(!!xDidSnap, !!yDidSnap);
+    if (!payload) {
+      return;
+    }
+    var state = ensureSnapFeedbackState(canvas);
+    if (!state) {
+      return;
+    }
+    var now = Date.now();
+    var nodeId = node.id != null ? String(node.id) : null;
+    if (!nodeId) {
+      return;
+    }
+
+    var pulseMs = getFeedbackPulseMs();
+    var pulse = state.pulses[nodeId];
+    if (!pulse) {
+      pulse = {
+        node: node,
+        hadBoxcolor: Object.prototype.hasOwnProperty.call(node, "boxcolor"),
+        boxcolor: node.boxcolor,
+        expiresAt: now + pulseMs,
+      };
+      state.pulses[nodeId] = pulse;
+    } else {
+      pulse.node = node;
+      pulse.expiresAt = now + pulseMs;
+    }
+    pulse.color = payload.color;
+    node.boxcolor = payload.color;
+
+    var badgeKey = nodeId + ":" + payload.axisLabel;
+    var cooldownMs = getFeedbackBadgeCooldownMs();
+    var lastAt = Number(state.badgeLastAtByKey[badgeKey]) || 0;
+    if (now - lastAt >= cooldownMs) {
+      state.badgeLastAtByKey[badgeKey] = now;
+      var badgeMs = getFeedbackBadgeMs();
+      var layer = ensureSnapBadgeLayer();
+      var badge = state.badgeSingleton;
+      if (!badge || !badge.el || !badge.el.isConnected) {
+        var el = createSnapBadgeElement(payload.axisLabel);
+        layer.appendChild(el);
+        badge = {
+          node: node,
+          el: el,
+          expiresAt: now + badgeMs,
+        };
+        state.badgeSingleton = badge;
+      } else {
+        badge.node = node;
+        badge.expiresAt = now + badgeMs;
+      }
+      badge.el.textContent = "SNAP " + payload.axisLabel;
+      badge.el.style.background = getFeedbackBadgeBgColor();
+      badge.el.style.color = getFeedbackBadgeTextColor();
+      badge.el.style.opacity = "0";
+      badge.el.style.transform = "translate3d(0,-4px,0)";
+      positionSnapBadge(canvas, badge);
+      requestAnimationFrame(function () {
+        if (!badge.el || !badge.el.isConnected) {
+          return;
+        }
+        badge.el.style.opacity = "1";
+        badge.el.style.transform = "translate3d(0,0,0)";
+      });
+    }
+    canvas.dirty_canvas = true;
+    canvas.dirty_bgcanvas = true;
+  }
+
+  function clearSnapFeedbackState(canvas, removeLayer) {
+    if (!canvas || !canvas.__blockSpaceSnapFeedbackState) {
+      if (removeLayer) {
+        removeSnapBadgeLayer();
+      }
+      return;
+    }
+    var state = canvas.__blockSpaceSnapFeedbackState;
+    var pulses = state.pulses || {};
+    var winnerState = canvas.__blockSpaceWinnerHighlight;
+    for (var key in pulses) {
+      if (!Object.prototype.hasOwnProperty.call(pulses, key)) {
+        continue;
+      }
+      var pulse = pulses[key];
+      if (!pulse || !pulse.node) {
+        continue;
+      }
+      if (winnerState && winnerState.node === pulse.node && getHighlightEnabled()) {
+        pulse.node.boxcolor = getHighlightColor();
+      } else if (pulse.hadBoxcolor) {
+        pulse.node.boxcolor = pulse.boxcolor;
+      } else {
+        delete pulse.node.boxcolor;
+      }
+    }
+    var badges = state.badges || [];
+    for (var i = 0; i < badges.length; i += 1) {
+      if (badges[i] && badges[i].el && badges[i].el.parentNode) {
+        badges[i].el.parentNode.removeChild(badges[i].el);
+      }
+    }
+    if (state.badgeSingleton && state.badgeSingleton.el && state.badgeSingleton.el.parentNode) {
+      state.badgeSingleton.el.parentNode.removeChild(state.badgeSingleton.el);
+    }
+    canvas.__blockSpaceSnapFeedbackState = {
+      pulses: {},
+      badges: [],
+      badgeLastAtByKey: {},
+      badgeSingleton: null,
+    };
+    if (removeLayer) {
+      removeSnapBadgeLayer();
+    }
+    canvas.dirty_canvas = true;
+    canvas.dirty_bgcanvas = true;
+  }
+
+  function updateSnapFeedback(canvas) {
+    if (!canvas) {
+      return;
+    }
+    if (!getFeedbackEnabled()) {
+      clearSnapFeedbackState(canvas, true);
+      return;
+    }
+    var state = ensureSnapFeedbackState(canvas);
+    if (!state) {
+      return;
+    }
+    var now = Date.now();
+    var winnerState = canvas.__blockSpaceWinnerHighlight;
+
+    var pulses = state.pulses || {};
+    for (var key in pulses) {
+      if (!Object.prototype.hasOwnProperty.call(pulses, key)) {
+        continue;
+      }
+      var pulse = pulses[key];
+      if (!pulse || !pulse.node || !getNodeBounds(pulse.node)) {
+        delete pulses[key];
+        continue;
+      }
+      if (now <= pulse.expiresAt) {
+        pulse.node.boxcolor = pulse.color;
+      } else {
+        if (winnerState && winnerState.node === pulse.node && getHighlightEnabled()) {
+          pulse.node.boxcolor = getHighlightColor();
+        } else if (pulse.hadBoxcolor) {
+          pulse.node.boxcolor = pulse.boxcolor;
+        } else {
+          delete pulse.node.boxcolor;
+        }
+        delete pulses[key];
+      }
+    }
+
+    var badge = state.badgeSingleton;
+    if (badge && badge.el) {
+      if (now > badge.expiresAt || !badge.node || !getNodeBounds(badge.node)) {
+        if (badge.el.parentNode) {
+          badge.el.parentNode.removeChild(badge.el);
+        }
+        state.badgeSingleton = null;
+      } else {
+        positionSnapBadge(canvas, badge);
+      }
+    }
+
+    if (!state.badgeSingleton) {
+      removeSnapBadgeLayer();
+    }
   }
 
   function ensureResizeDebugHud() {
@@ -1411,6 +1750,7 @@
       var resizeDelta = getResizeDelta(this, resizingNode);
       var resizeAxisLock = resolveResizeAxisLock(this, resizeDelta);
       applyResizeSnapping(this, resizingNode, resizeAxisLock);
+      updateSnapFeedback(this);
       renderResizeDebugHud(this);
       return result;
     }
@@ -1425,6 +1765,7 @@
     var activeNode = getActiveDraggedNode(this, event);
     if (!activeNode || activeNode.constructor === window.LGraphGroup) {
       clearSnapVisual(this);
+      updateSnapFeedback(this);
       this.__blockSpacePrevDragPoint = null;
       this.__blockSpaceDragAxisLock = null;
       renderResizeDebugHud(this);
@@ -1434,6 +1775,7 @@
 
     var activeBounds = getNodeBounds(activeNode);
     if (!activeBounds) {
+      updateSnapFeedback(this);
       return result;
     }
 
@@ -1446,6 +1788,8 @@
 
     var nodes = getGraphNodes(this);
     var didSnap = false;
+    var xDidSnapMove = false;
+    var yDidSnapMove = false;
 
     var xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, xSearchDistance, "x", "left", null);
     var xUseTopBottomFallback = false;
@@ -1466,6 +1810,7 @@
       if (xCandidate.delta <= thresholdCanvas) {
         activeNode.pos[0] = xCandidate.targetX;
         didSnap = true;
+        xDidSnapMove = true;
       }
     }
 
@@ -1488,6 +1833,7 @@
       if (yCandidate.delta <= thresholdCanvas) {
         activeNode.pos[1] = yCandidate.targetY;
         didSnap = true;
+        yDidSnapMove = true;
       }
     }
 
@@ -1495,17 +1841,35 @@
       clearSnapVisual(this);
     }
     if (didSnap) {
+      rememberRecentSnap(this, {
+        kind: "move",
+        nodeId: activeNode.id,
+        threshold: thresholdCanvas,
+        xDidSnap: xDidSnapMove,
+        yDidSnap: yDidSnapMove,
+        xTarget: xDidSnapMove ? activeNode.pos[0] : null,
+        yTarget: yDidSnapMove ? activeNode.pos[1] : null,
+      });
+      triggerSnapFeedback(this, activeNode, xDidSnapMove, yDidSnapMove);
       this.dirty_canvas = true;
       this.dirty_bgcanvas = true;
     }
+    updateSnapFeedback(this);
     renderResizeDebugHud(this);
 
     return result;
   };
 
   window.LGraphCanvas.prototype.processMouseUp = function (event) {
+    var nodeHint =
+      this.resizing_node ||
+      this.node_dragged ||
+      this.current_node ||
+      null;
     var result = originalProcessMouseUp.apply(this, arguments);
+    maybeCommitSnapOnMouseUp(this, nodeHint);
     clearSnapVisual(this);
+    clearSnapFeedbackState(this, true);
     this.__blockSpacePrevDragPoint = null;
     this.__blockSpaceDragAxisLock = null;
     this.__blockSpacePrevResizeSize = null;
@@ -1514,6 +1878,7 @@
     this.__blockSpaceResizeYSticky = null;
     this.__blockSpaceResizeYIntentState = null;
     this.__blockSpaceResizeDebugStatus = null;
+    this.__blockSpaceRecentSnap = null;
     renderResizeDebugHud(this);
     return result;
   };
