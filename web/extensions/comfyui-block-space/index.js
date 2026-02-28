@@ -220,6 +220,7 @@ async function ensureRuntimeScriptsLoaded(baseUrl) {
     "../../smart-sizing.js",
     "../../connection-focus.js",
     "../../node-snapping.js",
+    "../../node-arrangement.js",
   ];
   for (const rel of scripts) {
     const url = new URL(rel, baseUrl).toString() + "?v=" + ASSET_VERSION;

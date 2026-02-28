@@ -1400,4 +1400,6 @@
     var targetCanvas = canvas || (window.app && window.app.canvas) || null;
     resetPersistedHighlightArtifacts(targetCanvas);
   };
+  window.BlockSpaceNodeSnap.getHSnapMargin = getHSnapMargin;
+  window.BlockSpaceNodeSnap.getVSnapMargin = getVSnapMargin;
 })();
