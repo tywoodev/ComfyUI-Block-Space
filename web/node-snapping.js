@@ -34,8 +34,6 @@
   var SNAP_MOUSEUP_TOLERANCE_MULTIPLIER = 1.8;
   var MOVE_Y_STICKY_MULTIPLIER = 3.2;
   var MOVE_Y_STICKY_MIN_PX = 24;
-  var DEBUG_HUD_ID = "block-space-resize-debug-hud";
-  var DEBUG_MEMORY_HUD_ID = "block-space-resize-memory-debug-hud";
   var SNAP_BADGE_LAYER_ID = "block-space-snap-badge-layer";
   var DIMENSION_ASSOC_LAYER_ID = "block-space-dimension-association-layer";
 
@@ -275,19 +273,20 @@
       .map(function (entry) {
         if (entry && typeof entry === "object") {
           var n = Number(entry.value);
-          if (isFinite(n) && n > 0) {
+          if (isFinite(n)) { // REMOVED the n > 0 restriction
             return { value: n, node: entry.node || null };
           }
           return null;
         }
         var numeric = Number(entry);
-        if (isFinite(numeric) && numeric > 0) {
+        if (isFinite(numeric)) { // REMOVED the numeric > 0 restriction
           return { value: numeric, node: null };
         }
         return null;
       })
       .filter(function (entry) { return !!entry; })
       .sort(function (a, b) { return a.value - b.value; });
+      
     if (!sorted.length) {
       return [];
     }
@@ -2030,168 +2029,22 @@
     }
   }
 
-  function ensureResizeDebugHud() {
-    var hud = document.getElementById(DEBUG_HUD_ID);
-    if (hud) {
-      return hud;
-    }
-    hud = document.createElement("div");
-    hud.id = DEBUG_HUD_ID;
-    hud.style.position = "fixed";
-    hud.style.top = "200px";
-    hud.style.left = "200px";
-    hud.style.zIndex = "9999";
-    hud.style.padding = "10px 12px";
-    hud.style.background = "rgba(10,12,16,0.85)";
-    hud.style.border = "1px solid rgba(120,170,255,0.35)";
-    hud.style.borderRadius = "8px";
-    hud.style.color = "#d6e8ff";
-    hud.style.font = "12px/1.4 monospace";
-    hud.style.whiteSpace = "pre-line";
-    hud.style.pointerEvents = "none";
-    hud.textContent = "Resize snap: idle";
-    document.body.appendChild(hud);
-    return hud;
-  }
-
-  function ensureResizeMemoryDebugHud() {
-    var hud = document.getElementById(DEBUG_MEMORY_HUD_ID);
-    if (hud) {
-      return hud;
-    }
-    hud = document.createElement("div");
-    hud.id = DEBUG_MEMORY_HUD_ID;
-    hud.style.position = "fixed";
-    hud.style.top = "200px";
-    hud.style.right = "24px";
-    hud.style.zIndex = "9999";
-    hud.style.width = "380px";
-    hud.style.maxHeight = "65vh";
-    hud.style.overflow = "auto";
-    hud.style.padding = "10px 12px";
-    hud.style.background = "rgba(10,12,16,0.9)";
-    hud.style.border = "1px solid rgba(120,170,255,0.35)";
-    hud.style.borderRadius = "8px";
-    hud.style.color = "#d6e8ff";
-    hud.style.font = "12px/1.35 monospace";
-    hud.style.whiteSpace = "pre-line";
-    hud.style.pointerEvents = "none";
-    hud.textContent = "Resize memory: idle";
-    document.body.appendChild(hud);
-    return hud;
-  }
-
-  function formatClusterSummary(clusters) {
-    if (!Array.isArray(clusters) || !clusters.length) {
-      return "[]";
-    }
-    var parts = [];
-    for (var i = 0; i < clusters.length; i += 1) {
-      var c = clusters[i];
-      parts.push(
-        "[c=" +
-          Number(c.center).toFixed(2) +
-          ", n=" +
-          (c.count || 0) +
-          ", min=" +
-          Number(c.min).toFixed(2) +
-          ", max=" +
-          Number(c.max).toFixed(2) +
-          "]"
-      );
-    }
-    return parts.join("\n");
-  }
-
-  function renderResizeMemoryDebugHud(canvas) {
-    var hud = ensureResizeMemoryDebugHud();
-    if (!hud) {
-      return;
-    }
-    var s = canvas && canvas.__blockSpaceResizeDebugStatus;
-    if (!s || !s.active) {
-      hud.textContent = "Resize memory: idle";
-      return;
-    }
-    var xRef = s.xReference == null ? "-" : Number(s.xReference).toFixed(2);
-    var yRef = s.yReference == null ? "-" : Number(s.yReference).toFixed(2);
-    var xTarget = s.xTarget == null ? "-" : Number(s.xTarget).toFixed(2);
-    var yTarget = s.yTarget == null ? "-" : Number(s.yTarget).toFixed(2);
-    var xDelta = s.xDelta == null ? "-" : Number(s.xDelta).toFixed(2);
-    var yDelta = s.yDelta == null ? "-" : Number(s.yDelta).toFixed(2);
-    var xThreshold = s.xThreshold == null ? "-" : Number(s.xThreshold).toFixed(2);
-    var yThreshold = s.yThreshold == null ? "-" : Number(s.yThreshold).toFixed(2);
-    hud.textContent =
-      "Resize memory: active\n" +
-      "Node: " + (s.node || "-") + "\n" +
-      "Axis: " + (s.axis || "-") + "\n" +
-      "X intent: " + (s.xIntent || "steady") + "\n" +
-      "Y intent: " + (s.yIntent || "steady") + "\n" +
-      "Tolerance px: " + (s.dimTolerancePx != null ? s.dimTolerancePx : "-") + "\n" +
-      "Sample nodes: " + (s.dimSampleNodeCount != null ? s.dimSampleNodeCount : 0) + "\n" +
-      "\nX (width)\n" +
-      "Current: " + xRef + "\n" +
-      "Winner: " + (s.xWinner != null ? Number(s.xWinner).toFixed(2) : "none") + "\n" +
-      "Winner count: " + (s.dimWidthWinnerCount != null ? s.dimWidthWinnerCount : 0) + "\n" +
-      "Target: " + xTarget + "\n" +
-      "Delta/Threshold: " + xDelta + " / " + xThreshold + "\n" +
-      "Did snap: " + (s.xDidSnap ? "true" : "false") + "\n" +
-      "Clusters (" + (s.dimWidthClusterCount || 0) + "):\n" +
-      formatClusterSummary(s.dimWidthClusters) + "\n" +
-      "\nY (height)\n" +
-      "Current: " + yRef + "\n" +
-      "Winner: " + (s.yWinner != null ? Number(s.yWinner).toFixed(2) : "none") + "\n" +
-      "Winner count: " + (s.dimHeightWinnerCount != null ? s.dimHeightWinnerCount : 0) + "\n" +
-      "Target: " + yTarget + "\n" +
-      "Delta/Threshold: " + yDelta + " / " + yThreshold + "\n" +
-      "Did snap: " + (s.yDidSnap ? "true" : "false") + "\n" +
-      "Clusters (" + (s.dimHeightClusterCount || 0) + "):\n" +
-      formatClusterSummary(s.dimHeightClusters);
-  }
 
   function renderResizeDebugHud(canvas) {
-    var hud = ensureResizeDebugHud();
-    renderResizeMemoryDebugHud(canvas);
-    if (!hud) {
-      return;
+    var legacyLeftHud = document.getElementById("block-space-resize-debug-hud");
+    if (legacyLeftHud && legacyLeftHud.parentNode) {
+      legacyLeftHud.parentNode.removeChild(legacyLeftHud);
     }
-    var cursorX =
-      canvas && typeof canvas.__blockSpaceCursorX === "number"
-        ? Number(canvas.__blockSpaceCursorX).toFixed(2)
-        : "-";
+    var legacyRightHud = document.getElementById("block-space-resize-memory-debug-hud");
+    if (legacyRightHud && legacyRightHud.parentNode) {
+      legacyRightHud.parentNode.removeChild(legacyRightHud);
+    }
     var s = canvas && canvas.__blockSpaceResizeDebugStatus;
     if (!s || !s.active) {
       clearDimensionAssociationLayer();
-      hud.textContent = "Resize snap: idle\nCursor X: " + cursorX;
       return;
     }
     renderDimensionAssociationHighlights(canvas, s);
-    var delta = s.xDelta == null ? "-" : Number(s.xDelta).toFixed(2);
-    var threshold = s.xThreshold == null ? "-" : Number(s.xThreshold).toFixed(2);
-    var xRef = s.xReference == null ? "-" : Number(s.xReference).toFixed(2);
-    var xTarget = s.xTarget == null ? "-" : Number(s.xTarget).toFixed(2);
-    var yDelta = s.yDelta == null ? "-" : Number(s.yDelta).toFixed(2);
-    var yThreshold = s.yThreshold == null ? "-" : Number(s.yThreshold).toFixed(2);
-    var yRef = s.yReference == null ? "-" : Number(s.yReference).toFixed(2);
-    var yTarget = s.yTarget == null ? "-" : Number(s.yTarget).toFixed(2);
-    hud.textContent =
-      "Resize snap: active\n" +
-      "Cursor X: " + cursorX + "\n" +
-      "Node: " + (s.node || "-") + "\n" +
-      "Axis: " + (s.axis || "-") + "\n" +
-      "X ref: " + xRef + "\n" +
-      "X target: " + xTarget + "\n" +
-      "X winner: " + (s.xWinner || "none") + "\n" +
-      "X mode: " + (s.xMode || "-") + "\n" +
-      "X Delta/Threshold: " + delta + " / " + threshold + "\n" +
-      "X did snap: " + (s.xDidSnap ? "true" : "false") + "\n" +
-      "Y ref: " + yRef + "\n" +
-      "Y target: " + yTarget + "\n" +
-      "Y winner: " + (s.yWinner || "none") + "\n" +
-      "Y mode: " + (s.yMode || "-") + "\n" +
-      "Y Delta/Threshold: " + yDelta + " / " + yThreshold + "\n" +
-      "Y did snap: " + (s.yDidSnap ? "true" : "false") + "\n" +
-      "Did snap: " + (s.didSnap ? "true" : "false");
   }
 
   window.LGraphCanvas.prototype.processMouseMove = function (event) {
