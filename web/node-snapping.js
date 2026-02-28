@@ -9,6 +9,7 @@
   }
 
   var SNAP_THRESHOLD = 10;
+  var EXIT_THRESHOLD_MULTIPLIER = 1.5; // 10px to enter, 15px to exit
   var DEFAULT_H_SNAP_MARGIN = 60;
   var DEFAULT_V_SNAP_MARGIN = 60;
   var DEFAULT_MOVE_SNAP_STRENGTH = 1.0;
@@ -1409,6 +1410,7 @@
     if (!bounds) return false;
 
     var thresholdCanvas = (SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(canvas))) * getResizeSnapStrength();
+    var exitThresholdCanvas = thresholdCanvas * EXIT_THRESHOLD_MULTIPLIER;
     var currentWidth = bounds.right - bounds.left;
     var currentHeight = bounds.bottom - bounds.top;
     var currentRight = bounds.right;
@@ -1469,7 +1471,12 @@
       }
     }
 
-    if (bestXWidth !== null && bestXDelta <= thresholdCanvas) {
+    // Apply hysteresis logic for X
+    var recentSnap = canvas.__blockSpaceRecentSnap;
+    var wasSnappedX = recentSnap && recentSnap.kind === "resize" && recentSnap.nodeId === resizingNode.id && recentSnap.xDidSnap;
+    var currentThresholdX = wasSnappedX ? exitThresholdCanvas : thresholdCanvas;
+
+    if (bestXWidth !== null && bestXDelta <= currentThresholdX) {
       var nextWidth = Math.max(minSize[0], bestXWidth);
       if (isFinite(nextWidth) && Math.abs(nextWidth - currentWidth) > 0.01) {
         resizingNode.size[0] = nextWidth;
@@ -1503,7 +1510,11 @@
       }
     }
 
-    if (bestYHeight !== null && bestYDelta <= thresholdCanvas) {
+    // Apply hysteresis logic for Y
+    var wasSnappedY = recentSnap && recentSnap.kind === "resize" && recentSnap.nodeId === resizingNode.id && recentSnap.yDidSnap;
+    var currentThresholdY = wasSnappedY ? exitThresholdCanvas : thresholdCanvas;
+
+    if (bestYHeight !== null && bestYDelta <= currentThresholdY) {
       var nextHeight = Math.max(minSize[1], bestYHeight);
       if (isFinite(nextHeight) && Math.abs(nextHeight - currentHeight) > 0.01) {
         resizingNode.size[1] = nextHeight;
@@ -2213,10 +2224,19 @@
     var ySearchDistance = vSnapMargin * 2;
     var baseMoveThreshold =
       SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(this));
+    var exitThresholdCanvas = baseMoveThreshold * EXIT_THRESHOLD_MULTIPLIER;
     var thresholdCanvasX = baseMoveThreshold * getMoveSnapStrength();
     // Use a conservative acquire threshold for Y to avoid long-distance jump snaps.
     // Y-specific strength is applied to sticky retention, not initial acquisition.
     var thresholdCanvasY = baseMoveThreshold * getMoveSnapStrength();
+
+    // Hysteresis State Check
+    var recentSnap = this.__blockSpaceRecentSnap;
+    var wasSnappedX = recentSnap && recentSnap.kind === "move" && recentSnap.nodeId === activeNode.id && recentSnap.xDidSnap;
+    var wasSnappedY = recentSnap && recentSnap.kind === "move" && recentSnap.nodeId === activeNode.id && recentSnap.yDidSnap;
+    
+    var currentThresholdX = wasSnappedX ? (exitThresholdCanvas * getMoveSnapStrength()) : thresholdCanvasX;
+    var currentThresholdY = wasSnappedY ? (exitThresholdCanvas * getMoveSnapStrength()) : thresholdCanvasY;
 
     var nodes = getGraphNodes(this);
     var didSnap = false;
@@ -2240,7 +2260,7 @@
     if (xWinner) {
       setWinnerHighlight(this, xWinner.node);
       xCandidate = computeWinningXCandidate(activeBounds, xWinner, hSnapMargin, xUseTopBottomFallback);
-      if (xCandidate.delta <= thresholdCanvasX) {
+      if (xCandidate.delta <= currentThresholdX) {
         activeNode.pos[0] = xCandidate.targetX;
         didSnap = true;
         xDidSnapMove = true;
@@ -2266,11 +2286,14 @@
     var moveYLine = null;
 
     if (topWinner || bottomWinner) {
-      if (topDelta <= bottomDelta) {
+      // Prioritize top-edge snapping by giving it a 2px "bias" advantage.
+      // This means if the top is slightly further than the bottom, we still pick the top.
+      var topBias = 2; 
+      if (topWinner && (!bottomWinner || (topDelta <= (bottomDelta + topBias)))) {
         moveYWinner = topWinner;
         moveYDelta = topDelta;
-        moveYLine = topWinner.center; // The actual cluster canvas coordinate
-        moveYTarget = topWinner.center; // Where the active node's pos[1] should go
+        moveYLine = topWinner.center;
+        moveYTarget = topWinner.center;
       } else {
         moveYWinner = bottomWinner;
         moveYDelta = bottomDelta;
@@ -2296,7 +2319,7 @@
     }
 
     // 3. Threshold and Apply
-    if (moveYWinner && moveYDelta <= thresholdCanvasY) {
+    if (moveYWinner && moveYDelta <= currentThresholdY) {
       activeNode.pos[1] = moveYTarget;
       didSnap = true;
       yDidSnapMove = true;

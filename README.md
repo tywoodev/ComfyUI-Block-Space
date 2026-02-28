@@ -1,15 +1,8 @@
 # ComfyUI Block Space (Better Nodes)
 
-A frontend UX enhancement suite for ComfyUI and LiteGraph-based node editors. Upgrades default node interactions with smarter wiring, clearer visual tracing, intelligent sizing, and structured layout tools.
+A frontend UX enhancement suite for ComfyUI and LiteGraph-based node editors. Upgrades default node interactions with smarter wiring, clearer visual tracing, intelligent sizing, and robust snapping behavior.
 
 The goal: make complex node graphs easier to build, read, and maintain.
-
-## Dual-Mode Architecture
-
-Block Space supports two deployment modes:
-
-1. **Standalone Sandbox Mode** - For rapid prototyping and development outside of ComfyUI
-2. **ComfyUI Extension Mode** - Live integration as a ComfyUI custom node
 
 ## Core Features
 
@@ -34,11 +27,6 @@ Block Space supports two deployment modes:
 - Configurable margin and snap strength
 - Visual feedback with badges and pulses
 
-### 5. SmartGrid Container (`smart-grid-container.js`) - **Sandbox Only**
-- Row/column dashboards with draggable splitters
-- Docked node stacks with collapse/restore
-- Available in standalone sandbox mode only
-
 ## Settings (ComfyUI Extension)
 
 Access settings via **ComfyUI Settings** → **Block Space**:
@@ -59,14 +47,6 @@ git clone <repository-url> comfyui-block-space
 
 Restart ComfyUI. The extension auto-loads and adds the "Block Space" settings panel.
 
-### Standalone Sandbox Mode (Development)
-
-```bash
-python -m http.server 8000
-```
-
-Open: `http://localhost:8000/web/test.html`
-
 ## Project Structure
 
 ```
@@ -76,9 +56,7 @@ ComfyUI-Block-Space/
 │   ├── smart-drop.js                            # Type-aware auto-connect
 │   ├── connection-focus.js                      # Visual flow highlighting
 │   ├── smart-sizing.js                          # Node bounds enforcement
-│   ├── node-snapping.js                         # Edge alignment guides
-│   ├── smart-grid-container.js                  # Sandbox: Row/column layouts
-│   └── test.html                                # Sandbox entry point
+│   └── node-snapping.js                         # Edge alignment guides
 ├── docs/                                        # Documentation
 ├── __init__.py                                  # Python entry point
 └── README.md                                    # This file
@@ -96,15 +74,14 @@ ComfyUI-Block-Space/
 ### Testing
 
 - **No automated tests** currently
-- Manual verification via Sandbox mode (`test.html`)
-- Or install in ComfyUI and test with real workflows
+- Install in ComfyUI and test with real workflows
 
 ## Recent Changes
 
 - Simplified settings to toggle + style dropdown
 - Added port color matching for connector animations
 - Fixed vertical margin calculation in resize snapping
-- SmartGrid moved to sandbox-only (removed from ComfyUI extension)
+- Removed SmartGrid and Sandbox features
 
 ## License
 
