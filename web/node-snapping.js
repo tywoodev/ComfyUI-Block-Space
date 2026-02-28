@@ -401,14 +401,20 @@
       return memory;
     }
 
-    var nodes = getGraphNodes(canvas);
+    var allNodes = getGraphNodes(canvas);
+    
+    // --- RAYCAST FILTER (Depth: 2) ---
+    // Grabs immediate neighbors AND the layer of nodes directly behind them.
+    var targetNodes = getRaycastNeighbors(resizingNode, allNodes, 30, 2);
+
     var widthSamples = [];
     var heightSamples = [];
     var rightEdgeSamples = [];
     var bottomEdgeSamples = [];
 
-    for (var i = 0; i < nodes.length; i += 1) {
-      var node = nodes[i];
+    // Loop through the smartly filtered list instead of the entire graph
+    for (var i = 0; i < targetNodes.length; i += 1) {
+      var node = targetNodes[i];
       if (!node || node === resizingNode || node.constructor === window.LGraphGroup) {
         continue;
       }
@@ -459,7 +465,7 @@
     // --- IMPLEMENTING THE ADJACENCY FILTER ---
     // Instead of using allNodes, we filter down to the "Green Box"
     // We pass a 30px tolerance to allow for slightly misaligned nodes to still be recognized as neighbors.
-    var adjacentNodes = getImmediateNeighbors(activeNode, allNodes, 30);
+    var adjacentNodes = getRaycastNeighbors(activeNode, allNodes, 30, 2);
     
     var points = [];
     // Loop over adjacentNodes instead of allNodes
@@ -554,17 +560,14 @@
     return Math.min(aMax, bMax) - Math.max(aMin, bMin) >= -tol;
   }
 
-  function getImmediateNeighbors(activeNode, allNodes, tolerance) {
+  // Consolidated Raycast Function (Replaces getImmediateNeighbors)
+  function getRaycastNeighbors(activeNode, allNodes, tolerance, depth) {
     var activeBounds = getNodeBounds(activeNode);
     if (!activeBounds) return allNodes;
 
-    var closestLeftNode = null, closestRightNode = null;
-    var closestTopNode = null, closestBottomNode = null;
+    var leftHits = [], rightHits = [], topHits = [], bottomHits = [];
 
-    var minLeftDist = Infinity, minRightDist = Infinity;
-    var minTopDist = Infinity, minBottomDist = Infinity;
-
-    // 1. Raycast to find the immediate neighbors on all 4 axes
+    // 1. Raycast on all 4 axes and collect intersecting nodes
     for (var i = 0; i < allNodes.length; i++) {
       var n = allNodes[i];
       if (n === activeNode || n.constructor === window.LGraphGroup) continue;
@@ -573,49 +576,45 @@
 
       // X-Axis Raycast (Must overlap vertically)
       if (rangesOverlap(activeBounds.top, activeBounds.bottom, b.top, b.bottom, tolerance)) {
-        if (b.centerX < activeBounds.centerX) { // Looking Left
-          var dist = activeBounds.left - b.right;
-          if (dist >= -tolerance && dist < minLeftDist) {
-            minLeftDist = dist;
-            closestLeftNode = b;
-          }
-        } else { // Looking Right
-          var dist = b.left - activeBounds.right;
-          if (dist >= -tolerance && dist < minRightDist) {
-            minRightDist = dist;
-            closestRightNode = b;
-          }
+        if (b.centerX < activeBounds.centerX) {
+          leftHits.push({ bounds: b, dist: Math.max(0, activeBounds.left - b.right) });
+        } else {
+          rightHits.push({ bounds: b, dist: Math.max(0, b.left - activeBounds.right) });
         }
       }
 
       // Y-Axis Raycast (Must overlap horizontally)
       if (rangesOverlap(activeBounds.left, activeBounds.right, b.left, b.right, tolerance)) {
-        if (b.centerY < activeBounds.centerY) { // Looking Up
-          var dist = activeBounds.top - b.bottom;
-          if (dist >= -tolerance && dist < minTopDist) {
-            minTopDist = dist;
-            closestTopNode = b;
-          }
-        } else { // Looking Down
-          var dist = b.top - activeBounds.bottom;
-          if (dist >= -tolerance && dist < minBottomDist) {
-            minBottomDist = dist;
-            closestBottomNode = b;
-          }
+        if (b.centerY < activeBounds.centerY) {
+          topHits.push({ bounds: b, dist: Math.max(0, activeBounds.top - b.bottom) });
+        } else {
+          bottomHits.push({ bounds: b, dist: Math.max(0, b.top - activeBounds.bottom) });
         }
       }
     }
 
-    // 2. Define the Adjacency Envelope (The "Green Box")
-    // If a neighbor is found, we use its outer edge as a hard wall.
-    // If no neighbor is found, we set a reasonable max distance (e.g., 800px) so it doesn't search to infinity.
-    var maxGap = 800; 
-    var minAcceptableX = closestLeftNode ? closestLeftNode.left - tolerance : activeBounds.left - maxGap;
-    var maxAcceptableX = closestRightNode ? closestRightNode.right + tolerance : activeBounds.right + maxGap;
-    var minAcceptableY = closestTopNode ? closestTopNode.top - tolerance : activeBounds.top - maxGap;
-    var maxAcceptableY = closestBottomNode ? closestBottomNode.bottom + tolerance : activeBounds.bottom + maxGap;
+    // 2. Sort hits by proximity to the active node
+    var sortFn = function(a, b) { return a.dist - b.dist; };
+    leftHits.sort(sortFn); 
+    rightHits.sort(sortFn);
+    topHits.sort(sortFn); 
+    bottomHits.sort(sortFn);
 
-    // 3. Collect only the nodes that fall inside the Envelope
+    // 3. Define the envelope boundary based on requested 'depth'
+    var maxGap = depth * 800; // Expand fallback search area based on depth
+
+    var getBound = function(hits, prop, activeRef, sign) {
+      if (hits.length === 0) return activeRef + (maxGap * sign);
+      var idx = Math.min(depth - 1, hits.length - 1); // Get node at requested depth
+      return hits[idx].bounds[prop] + (tolerance * sign);
+    };
+
+    var minX = getBound(leftHits, 'left', activeBounds.left, -1);
+    var maxX = getBound(rightHits, 'right', activeBounds.right, 1);
+    var minY = getBound(topHits, 'top', activeBounds.top, -1);
+    var maxY = getBound(bottomHits, 'bottom', activeBounds.bottom, 1);
+
+    // 4. Collect nodes inside the calculated envelope
     var neighbors = [];
     for (var j = 0; j < allNodes.length; j++) {
       var targetNode = allNodes[j];
@@ -623,8 +622,8 @@
       var targetBounds = getNodeBounds(targetNode);
       if (!targetBounds) continue;
 
-      if (targetBounds.centerX >= minAcceptableX && targetBounds.centerX <= maxAcceptableX &&
-          targetBounds.centerY >= minAcceptableY && targetBounds.centerY <= maxAcceptableY) {
+      if (targetBounds.centerX >= minX && targetBounds.centerX <= maxX &&
+          targetBounds.centerY >= minY && targetBounds.centerY <= maxY) {
         neighbors.push(targetNode);
       }
     }
