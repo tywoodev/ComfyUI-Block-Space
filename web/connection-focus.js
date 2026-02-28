@@ -35,52 +35,9 @@
     pulseColor: "#ff00ae",
     connectorStubLength: 34,
     connectorStyle: "hybrid",
-    enableHybrid: true,
-    enableStraight: true,
-    enableAngled: true,
+    enabled: true,
   };
   var CONNECTOR_FAN_SPACING = 8;
-
-  function normalizeConnectorStyle(styleValue) {
-    if (styleValue === "straight" || styleValue === "hybrid" || styleValue === "angled") {
-      return styleValue;
-    }
-    return defaultSettings.connectorStyle;
-  }
-
-  function isComfyUIRuntime() {
-    return !!(
-      window.BetterNodesSettings &&
-      typeof window.BetterNodesSettings.isComfyUIRuntime === "function" &&
-      window.BetterNodesSettings.isComfyUIRuntime()
-    );
-  }
-
-  function getEnabledConnectorStyles(settings) {
-    var enabled = [];
-    if (settings.enableHybrid) {
-      enabled.push("hybrid");
-    }
-    if (settings.enableStraight) {
-      enabled.push("straight");
-    }
-    if (settings.enableAngled) {
-      enabled.push("angled");
-    }
-    return enabled;
-  }
-
-  function resolveAllowedConnectorStyle(styleValue, settings) {
-    var preferred = normalizeConnectorStyle(styleValue);
-    var enabled = getEnabledConnectorStyles(settings);
-    if (enabled.length === 0) {
-      return defaultSettings.connectorStyle;
-    }
-    if (enabled.indexOf(preferred) !== -1) {
-      return preferred;
-    }
-    return enabled[0];
-  }
 
   function getFocusSettings() {
     if (!window.ConnectionFocusSettings || typeof window.ConnectionFocusSettings !== "object") {
@@ -94,47 +51,21 @@
       settings.connectorStubLength = defaultSettings.connectorStubLength;
     }
     settings.connectorStubLength = Math.max(10, Math.min(80, settings.connectorStubLength));
-    settings.enableHybrid = settings.enableHybrid !== false;
-    settings.enableStraight = settings.enableStraight !== false;
-    settings.enableAngled = settings.enableAngled !== false;
-    settings.connectorStyle = resolveAllowedConnectorStyle(settings.connectorStyle, settings);
+    
+    var style = settings.connectorStyle;
+    if (style !== "straight" && style !== "hybrid" && style !== "angled") {
+      settings.connectorStyle = defaultSettings.connectorStyle;
+    }
+    
+    if (typeof settings.enabled !== "boolean") {
+      settings.enabled = defaultSettings.enabled;
+    }
     return settings;
   }
 
-  function toPickerHex(colorValue) {
-    if (typeof colorValue !== "string") {
-      return defaultSettings.pulseColor;
-    }
-    var value = colorValue.trim();
-    if (/^#[0-9a-fA-F]{6}$/.test(value)) {
-      return value.toLowerCase();
-    }
-    if (/^#[0-9a-fA-F]{3}$/.test(value)) {
-      return (
-        "#" +
-        value.charAt(1) +
-        value.charAt(1) +
-        value.charAt(2) +
-        value.charAt(2) +
-        value.charAt(3) +
-        value.charAt(3)
-      ).toLowerCase();
-    }
-    return defaultSettings.pulseColor;
-  }
-
   function markCanvasDirty(canvas) {
-    if (!canvas) {
-      return;
-    }
-    if (typeof canvas.setDirty === "function") {
+    if (canvas && typeof canvas.setDirty === "function") {
       canvas.setDirty(true, true);
-      return;
-    }
-    canvas.dirty_canvas = true;
-    canvas.dirty_bgcanvas = true;
-    if (typeof canvas.draw === "function") {
-      canvas.draw(true, true);
     }
   }
 
@@ -181,125 +112,6 @@
     } else {
       clearFocusState();
     }
-  }
-
-  function getCanvasForSettingsRedraw() {
-    if (focusState.activeCanvas) {
-      return focusState.activeCanvas;
-    }
-    if (window.__demoCanvas) {
-      return window.__demoCanvas;
-    }
-    if (window.LGraphCanvas && window.LGraphCanvas.active_canvas) {
-      return window.LGraphCanvas.active_canvas;
-    }
-    return null;
-  }
-
-  window.setConnectionFocusSettings = function (partialSettings) {
-    var settings = getFocusSettings();
-    var styleChanged = false;
-    if (partialSettings && typeof partialSettings === "object") {
-      if (typeof partialSettings.pulseColor === "string" && partialSettings.pulseColor.trim()) {
-        settings.pulseColor = partialSettings.pulseColor.trim();
-      }
-      if (typeof partialSettings.connectorStubLength === "number" && isFinite(partialSettings.connectorStubLength)) {
-        settings.connectorStubLength = Math.max(10, Math.min(80, partialSettings.connectorStubLength));
-      }
-      if (typeof partialSettings.connectorStyle === "string") {
-        var normalizedStyle = normalizeConnectorStyle(partialSettings.connectorStyle);
-        styleChanged = normalizedStyle !== settings.connectorStyle;
-        settings.connectorStyle = normalizedStyle;
-      }
-      if (typeof partialSettings.enableHybrid === "boolean") {
-        settings.enableHybrid = partialSettings.enableHybrid;
-      }
-      if (typeof partialSettings.enableStraight === "boolean") {
-        settings.enableStraight = partialSettings.enableStraight;
-      }
-      if (typeof partialSettings.enableAngled === "boolean") {
-        settings.enableAngled = partialSettings.enableAngled;
-      }
-    }
-    settings.connectorStyle = resolveAllowedConnectorStyle(settings.connectorStyle, settings);
-    // Keep pulse animation alive when changing connector style mid-focus.
-    if (styleChanged && focusState.isHolding && focusState.activeCanvas && focusState.activeNodeId != null) {
-      focusState.animationTime = window.performance ? window.performance.now() : Date.now();
-      stopAnimationLoop();
-      startAnimationLoop();
-    }
-    markCanvasDirty(getCanvasForSettingsRedraw());
-    return {
-      pulseColor: settings.pulseColor,
-      connectorStubLength: settings.connectorStubLength,
-      connectorStyle: settings.connectorStyle,
-      enableHybrid: settings.enableHybrid,
-      enableStraight: settings.enableStraight,
-      enableAngled: settings.enableAngled,
-    };
-  };
-
-  function setupDebugColorPicker() {
-    if (isComfyUIRuntime()) {
-      return;
-    }
-    var input = document.getElementById("focus-pulse-color");
-    if (!input) {
-      return;
-    }
-
-    var settings = getFocusSettings();
-    input.value = toPickerHex(settings.pulseColor);
-
-    input.addEventListener("input", function () {
-      window.setConnectionFocusSettings({
-        pulseColor: input.value,
-      });
-    });
-  }
-
-  function setupDebugConnectorStyleSelector() {
-    if (isComfyUIRuntime()) {
-      return;
-    }
-    var select = document.getElementById("focus-connector-style");
-    if (!select) {
-      return;
-    }
-
-    var settings = getFocusSettings();
-    select.value = settings.connectorStyle;
-
-    function applyStyleSelection() {
-      window.setConnectionFocusSettings({
-        connectorStyle: select.value,
-      });
-    }
-
-    // Some browsers commit <select> changes on blur; listen to both so HUD updates apply immediately.
-    select.addEventListener("input", applyStyleSelection);
-    select.addEventListener("change", applyStyleSelection);
-  }
-
-  function ensureFocusVersionStamp() {
-    if (isComfyUIRuntime()) {
-      return;
-    }
-    var hud = document.querySelector(".hud");
-    if (!hud) {
-      return;
-    }
-    if (hud.querySelector(".focus-version-stamp")) {
-      return;
-    }
-
-    var stamp = document.createElement("div");
-    stamp.className = "focus-version-stamp";
-    stamp.textContent = "Connection focus: v2";
-    stamp.style.marginTop = "6px";
-    stamp.style.fontSize = "11px";
-    stamp.style.opacity = "0.75";
-    hud.appendChild(stamp);
   }
 
   function isLeftPointer(event) {
@@ -741,7 +553,7 @@
 
   window.LGraphCanvas.prototype.renderLink = function (ctx, a, b) {
     // If custom connectors are disabled, use original LiteGraph rendering
-    if (!getFocusSettings().enableAngled) {
+    if (!getFocusSettings().enabled) {
       return originalRenderLink.apply(this, arguments);
     }
 
@@ -797,7 +609,7 @@
   if (typeof originalDrawNode === "function") {
     window.LGraphCanvas.prototype.drawNode = function (node, ctx) {
       // If custom connectors are disabled, use original LiteGraph rendering
-      if (!getFocusSettings().enableAngled) {
+      if (!getFocusSettings().enabled) {
         return originalDrawNode.apply(this, arguments);
       }
 
@@ -866,7 +678,7 @@
     var result = originalProcessMouseDown.apply(this, arguments);
 
     // Only set focus state if custom connectors are enabled
-    if (!getFocusSettings().enableAngled) {
+    if (!getFocusSettings().enabled) {
       return result;
     }
 
@@ -927,18 +739,6 @@
     },
     true
   );
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", function () {
-      setupDebugColorPicker();
-      setupDebugConnectorStyleSelector();
-      ensureFocusVersionStamp();
-    });
-  } else {
-    setupDebugColorPicker();
-    setupDebugConnectorStyleSelector();
-    ensureFocusVersionStamp();
-  }
 
   window.__connectionFocusState = focusState;
   window.LGraphCanvas.prototype.__connectionFocusPatched = true;

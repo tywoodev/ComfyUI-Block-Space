@@ -20,13 +20,9 @@
   var DEFAULT_HIGHLIGHT_COLOR = "#1a3a6b";
   var DEFAULT_FEEDBACK_ENABLED = true;
   var DEFAULT_FEEDBACK_PULSE_MS = 160;
-  var DEFAULT_FEEDBACK_BADGE_MS = 260;
-  var DEFAULT_FEEDBACK_BADGE_COOLDOWN_MS = 200;
   var DEFAULT_FEEDBACK_COLOR_X = "#1a3a6b";
   var DEFAULT_FEEDBACK_COLOR_Y = "#b57cff";
   var DEFAULT_FEEDBACK_COLOR_XY = "#1a6b35";
-  var DEFAULT_FEEDBACK_BADGE_BG = "#0f172a";
-  var DEFAULT_FEEDBACK_BADGE_TEXT = "#e5f1ff";
   var V_SNAP_MARGIN_VISUAL_MULTIPLIER = 1.75;
   var WINNER_HIGHLIGHT_BG_FALLBACK = "#3a3f47";
   var DEBUG_RESIZE_SNAPPING = false;
@@ -35,7 +31,6 @@
   var SNAP_MOUSEUP_TOLERANCE_MULTIPLIER = 1.8;
   var MOVE_Y_STICKY_MULTIPLIER = 3.2;
   var MOVE_Y_STICKY_MIN_PX = 24;
-  var SNAP_BADGE_LAYER_ID = "block-space-snap-badge-layer";
   var DIMENSION_ASSOC_LAYER_ID = "block-space-dimension-association-layer";
 
   var originalProcessMouseMove = window.LGraphCanvas.prototype.processMouseMove;
@@ -163,24 +158,6 @@
     );
   }
 
-  function getFeedbackBadgeMs() {
-    return clampNumber(
-      getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeMs", DEFAULT_FEEDBACK_BADGE_MS),
-      80,
-      5000,
-      DEFAULT_FEEDBACK_BADGE_MS
-    );
-  }
-
-  function getFeedbackBadgeCooldownMs() {
-    return clampNumber(
-      getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeCooldownMs", DEFAULT_FEEDBACK_BADGE_COOLDOWN_MS),
-      0,
-      5000,
-      DEFAULT_FEEDBACK_BADGE_COOLDOWN_MS
-    );
-  }
-
   function getFeedbackColorX() {
     var value = getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorX", DEFAULT_FEEDBACK_COLOR_X);
     return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_COLOR_X;
@@ -194,16 +171,6 @@
   function getFeedbackColorXY() {
     var value = getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorXY", DEFAULT_FEEDBACK_COLOR_XY);
     return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_COLOR_XY;
-  }
-
-  function getFeedbackBadgeBgColor() {
-    var value = getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeBg", DEFAULT_FEEDBACK_BADGE_BG);
-    return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_BADGE_BG;
-  }
-
-  function getFeedbackBadgeTextColor() {
-    var value = getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeText", DEFAULT_FEEDBACK_BADGE_TEXT);
-    return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_BADGE_TEXT;
   }
 
   function getNodeBounds(node) {
@@ -1699,31 +1666,6 @@
     return String(value || "").trim().toLowerCase();
   }
 
-  function ensureSnapBadgeLayer() {
-    var layer = document.getElementById(SNAP_BADGE_LAYER_ID);
-    if (layer) {
-      return layer;
-    }
-    layer = document.createElement("div");
-    layer.id = SNAP_BADGE_LAYER_ID;
-    layer.style.position = "fixed";
-    layer.style.left = "0";
-    layer.style.top = "0";
-    layer.style.width = "100vw";
-    layer.style.height = "100vh";
-    layer.style.pointerEvents = "none";
-    layer.style.zIndex = "10000";
-    document.body.appendChild(layer);
-    return layer;
-  }
-
-  function removeSnapBadgeLayer() {
-    var layer = document.getElementById(SNAP_BADGE_LAYER_ID);
-    if (layer && layer.parentNode) {
-      layer.parentNode.removeChild(layer);
-    }
-  }
-
   function ensureDimensionAssociationLayer() {
     var layer = document.getElementById(DIMENSION_ASSOC_LAYER_ID);
     if (layer) {
@@ -1896,9 +1838,6 @@
     if (!canvas.__blockSpaceSnapFeedbackState) {
       canvas.__blockSpaceSnapFeedbackState = {
         pulses: {},
-        badges: [],
-        badgeLastAtByKey: {},
-        badgeSingleton: null,
       };
     }
     return canvas.__blockSpaceSnapFeedbackState;
@@ -1928,24 +1867,6 @@
       return { axisLabel: "X", color: getFeedbackColorX() };
     }
     return { axisLabel: "Y", color: getFeedbackColorY() };
-  }
-
-  function createSnapBadgeElement(axisLabel) {
-    var el = document.createElement("div");
-    el.textContent = "SNAP " + axisLabel;
-    el.style.position = "fixed";
-    el.style.padding = "3px 8px";
-    el.style.borderRadius = "999px";
-    el.style.font = "600 11px/1.2 monospace";
-    el.style.letterSpacing = "0.2px";
-    el.style.background = getFeedbackBadgeBgColor();
-    el.style.color = getFeedbackBadgeTextColor();
-    el.style.border = "1px solid rgba(255,255,255,0.22)";
-    el.style.boxShadow = "0 4px 12px rgba(0,0,0,0.28)";
-    el.style.opacity = "0";
-    el.style.transform = "translate3d(0,-4px,0)";
-    el.style.transition = "opacity 90ms ease, transform 90ms ease";
-    return el;
   }
 
   function positionSnapBadge(canvas, badge) {
@@ -1996,9 +1917,6 @@
 
   function clearSnapFeedbackState(canvas, removeLayer) {
     if (!canvas || !canvas.__blockSpaceSnapFeedbackState) {
-      if (removeLayer) {
-        removeSnapBadgeLayer();
-      }
       return;
     }
     var state = canvas.__blockSpaceSnapFeedbackState;
@@ -2020,24 +1938,9 @@
         delete pulse.node.boxcolor;
       }
     }
-    var badges = state.badges || [];
-    for (var i = 0; i < badges.length; i += 1) {
-      if (badges[i] && badges[i].el && badges[i].el.parentNode) {
-        badges[i].el.parentNode.removeChild(badges[i].el);
-      }
-    }
-    if (state.badgeSingleton && state.badgeSingleton.el && state.badgeSingleton.el.parentNode) {
-      state.badgeSingleton.el.parentNode.removeChild(state.badgeSingleton.el);
-    }
     canvas.__blockSpaceSnapFeedbackState = {
       pulses: {},
-      badges: [],
-      badgeLastAtByKey: {},
-      badgeSingleton: null,
     };
-    if (removeLayer) {
-      removeSnapBadgeLayer();
-    }
     canvas.dirty_canvas = true;
     canvas.dirty_bgcanvas = true;
   }
@@ -2079,22 +1982,6 @@
         }
         delete pulses[key];
       }
-    }
-
-    var badge = state.badgeSingleton;
-    if (badge && badge.el) {
-      if (now > badge.expiresAt || !badge.node || !getNodeBounds(badge.node)) {
-        if (badge.el.parentNode) {
-          badge.el.parentNode.removeChild(badge.el);
-        }
-        state.badgeSingleton = null;
-      } else {
-        positionSnapBadge(canvas, badge);
-      }
-    }
-
-    if (!state.badgeSingleton) {
-      removeSnapBadgeLayer();
     }
   }
 

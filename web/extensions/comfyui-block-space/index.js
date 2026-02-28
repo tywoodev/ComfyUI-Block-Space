@@ -35,9 +35,7 @@ function applyConnectorSettings() {
   if (!window.ConnectionFocusSettings) {
     window.ConnectionFocusSettings = {};
   }
-  window.ConnectionFocusSettings.enableAngled = isEnabled;
-  window.ConnectionFocusSettings.enableHybrid = isEnabled;
-  window.ConnectionFocusSettings.enableStraight = isEnabled;
+  window.ConnectionFocusSettings.enabled = isEnabled;
   window.ConnectionFocusSettings.connectorStyle = connectorStyle;
 }
 
