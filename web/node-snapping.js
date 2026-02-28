@@ -166,7 +166,7 @@
   }
 
   function getFeedbackEnabled() {
-    return !!getSettingValue("BlockSpace.Snap.FeedbackEnabled", DEFAULT_FEEDBACK_ENABLED);
+    return isSnappingEnabled();
   }
 
   function getFeedbackPulseMs() {
@@ -1997,8 +1997,8 @@
       this.__blockSpaceCursorY = event.clientY;
     }
 
-    // Bypass snapping if Shift key is held
-    if (event && event.shiftKey) {
+    // Bypass snapping if Shift key is held or snapping is disabled
+    if ((event && event.shiftKey) || !isSnappingEnabled()) {
       this.__blockSpaceResizeDebugStatus = null;
       renderResizeDebugHud(this);
       updateSnapFeedback(this);
