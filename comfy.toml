@@ -6,4 +6,9 @@ license = "MIT"
 repository = "https://github.com/tywoodev/ComfyUI-Block-Space"
 
 [publisher]
-name = "tywoodev"
+name = "ty-woo"
+
+[tool.comfy]
+PublisherId = "ty-woo" # TODO (fill in Publisher ID from Comfy Registry Website).
+DisplayName = "ComfyUI-Block-Space" # Display name for the Custom Node. Can be changed later.
+Icon = "https://github.com/tywoodev/ComfyUI-Block-Space/blob/main/assets/logo.svg" # SVG, PNG, JPG or GIF (MAX. 800x400px)
