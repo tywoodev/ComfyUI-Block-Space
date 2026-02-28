@@ -1,6 +1,6 @@
 import { app } from "/scripts/app.js";
 
-const ASSET_VERSION = "2026-02-26-comfyui-node-snapping-phase-1-v46";
+const ASSET_VERSION = "2026-02-27-comfyui-node-snapping-v4";
 
 const CONNECTOR_DEFAULTS = {
   flowColor: "#ff00ae",
@@ -10,23 +10,13 @@ const CONNECTOR_DEFAULTS = {
   enableAngled: true,
 };
 
-const GRID_DEFAULTS = {
-  rowPadding: 28,
-  rowTopPadding: 52,
-  rowBottomPadding: 46,
-  nodeVerticalGap: 40,
-  borderJunctionGap: 6,
-  gridLineWidth: 2,
-  gridLineColor: "#ffffff",
-  gridLineStyle: "solid",
-  edgeToEdgeSnapGapPx: 20,
-};
-
 const NODE_SNAP_DEFAULTS = {
   hMarginPx: 60,
   vMarginPx: 60,
   moveStrength: 1.0,
+  moveYSnapStrength: 2.4,
   resizeStrength: 1.8,
+  dimensionTolerancePx: 12,
   highlightEnabled: true,
   highlightColor: "#57b1ff",
   highlightWidth: 3,
@@ -71,13 +61,6 @@ function asStyle(value, fallback) {
   return fallback;
 }
 
-function asDividerStyle(value, fallback) {
-  if (value === "solid" || value === "dashed" || value === "dotted" || value === "double") {
-    return value;
-  }
-  return fallback;
-}
-
 function getSettingValue(id, fallback) {
   const settings = app && app.ui && app.ui.settings;
   if (!settings) {
@@ -102,7 +85,7 @@ function addSetting(definition) {
   try {
     settings.addSetting(definition);
   } catch (error) {
-    // Ignore per-setting registration errors to keep other settings visible.
+    // Ignore per-setting registration errors
   }
 }
 
@@ -164,7 +147,6 @@ async function ensureRuntimeScriptsLoaded(baseUrl) {
     "../../smart-drop.js",
     "../../smart-sizing.js",
     "../../connection-focus.js",
-    "../../smart-grid-container.js",
     "../../node-snapping.js",
   ];
   for (const rel of scripts) {
@@ -198,47 +180,6 @@ function getConnectorSettings() {
   };
 }
 
-function getGridSettings() {
-  return {
-    rowPadding: asNumber(
-      getSettingValue("comfyuiBlockSpace.smartgrid.rowPadding", GRID_DEFAULTS.rowPadding),
-      GRID_DEFAULTS.rowPadding
-    ),
-    rowTopPadding: asNumber(
-      getSettingValue("comfyuiBlockSpace.smartgrid.rowTopPadding", GRID_DEFAULTS.rowTopPadding),
-      GRID_DEFAULTS.rowTopPadding
-    ),
-    rowBottomPadding: asNumber(
-      getSettingValue("comfyuiBlockSpace.smartgrid.rowBottomPadding", GRID_DEFAULTS.rowBottomPadding),
-      GRID_DEFAULTS.rowBottomPadding
-    ),
-    nodeVerticalGap: asNumber(
-      getSettingValue("comfyuiBlockSpace.smartgrid.nodeVerticalGap", GRID_DEFAULTS.nodeVerticalGap),
-      GRID_DEFAULTS.nodeVerticalGap
-    ),
-    borderJunctionGap: asNumber(
-      getSettingValue("comfyuiBlockSpace.smartgrid.borderJunctionGap", GRID_DEFAULTS.borderJunctionGap),
-      GRID_DEFAULTS.borderJunctionGap
-    ),
-    gridLineWidth: asNumber(
-      getSettingValue("comfyuiBlockSpace.smartgrid.gridLineWidth", GRID_DEFAULTS.gridLineWidth),
-      GRID_DEFAULTS.gridLineWidth
-    ),
-    gridLineColor: asColor(
-      getSettingValue("comfyuiBlockSpace.smartgrid.gridLineColor", GRID_DEFAULTS.gridLineColor),
-      GRID_DEFAULTS.gridLineColor
-    ),
-    gridLineStyle: asDividerStyle(
-      getSettingValue("comfyuiBlockSpace.smartgrid.gridLineStyle", GRID_DEFAULTS.gridLineStyle),
-      GRID_DEFAULTS.gridLineStyle
-    ),
-    edgeToEdgeSnapGapPx: asNumber(
-      getSettingValue("comfyuiBlockSpace.smartgrid.edgeToEdgeSnapGapPx", GRID_DEFAULTS.edgeToEdgeSnapGapPx),
-      GRID_DEFAULTS.edgeToEdgeSnapGapPx
-    ),
-  };
-}
-
 function applyConnectorSettings() {
   if (typeof window.setConnectionFocusSettings !== "function") {
     return;
@@ -250,90 +191,27 @@ function applyConnectorSettings() {
   }
 }
 
-function applyGridSettings() {
-  if (!window.SmartGrid || typeof window.SmartGrid.setLayoutSettings !== "function") {
-    return;
-  }
-  const settings = getGridSettings();
-  window.SmartGrid.setLayoutSettings(settings);
-  if (window.BetterNodesSettings) {
-    window.BetterNodesSettings.set("comfyuiBlockSpace.smartgrid", settings);
-  }
-}
-
 function applyNodeSnapSettings() {
   if (window.BetterNodesSettings) {
     window.BetterNodesSettings.set("comfyuiBlockSpace.nodeSnap", {
-      hMarginPx: asNumber(
-        getSettingValue(
-          "comfyuiBlockSpace.nodeSnap.hMarginPx",
-          getSettingValue("comfyuiBlockSpace.nodeSnap.marginPx", NODE_SNAP_DEFAULTS.hMarginPx)
-        ),
-        NODE_SNAP_DEFAULTS.hMarginPx
-      ),
-      vMarginPx: asNumber(
-        getSettingValue(
-          "comfyuiBlockSpace.nodeSnap.vMarginPx",
-          getSettingValue("comfyuiBlockSpace.nodeSnap.marginPx", NODE_SNAP_DEFAULTS.vMarginPx)
-        ),
-        NODE_SNAP_DEFAULTS.vMarginPx
-      ),
-      moveStrength: asNumber(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.moveStrength", NODE_SNAP_DEFAULTS.moveStrength),
-        NODE_SNAP_DEFAULTS.moveStrength
-      ),
-      resizeStrength: asNumber(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.resizeStrength", NODE_SNAP_DEFAULTS.resizeStrength),
-        NODE_SNAP_DEFAULTS.resizeStrength
-      ),
-      highlightEnabled: asBool(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.highlightEnabled", NODE_SNAP_DEFAULTS.highlightEnabled),
-        NODE_SNAP_DEFAULTS.highlightEnabled
-      ),
-      highlightColor: asColor(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.highlightColor", NODE_SNAP_DEFAULTS.highlightColor),
-        NODE_SNAP_DEFAULTS.highlightColor
-      ),
-      highlightWidth: asNumber(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.highlightWidth", NODE_SNAP_DEFAULTS.highlightWidth),
-        NODE_SNAP_DEFAULTS.highlightWidth
-      ),
-      feedbackEnabled: asBool(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackEnabled", NODE_SNAP_DEFAULTS.feedbackEnabled),
-        NODE_SNAP_DEFAULTS.feedbackEnabled
-      ),
-      feedbackPulseMs: asNumber(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackPulseMs", NODE_SNAP_DEFAULTS.feedbackPulseMs),
-        NODE_SNAP_DEFAULTS.feedbackPulseMs
-      ),
-      feedbackBadgeMs: asNumber(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeMs", NODE_SNAP_DEFAULTS.feedbackBadgeMs),
-        NODE_SNAP_DEFAULTS.feedbackBadgeMs
-      ),
-      feedbackBadgeCooldownMs: asNumber(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeCooldownMs", NODE_SNAP_DEFAULTS.feedbackBadgeCooldownMs),
-        NODE_SNAP_DEFAULTS.feedbackBadgeCooldownMs
-      ),
-      feedbackColorX: asColor(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorX", NODE_SNAP_DEFAULTS.feedbackColorX),
-        NODE_SNAP_DEFAULTS.feedbackColorX
-      ),
-      feedbackColorY: asColor(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorY", NODE_SNAP_DEFAULTS.feedbackColorY),
-        NODE_SNAP_DEFAULTS.feedbackColorY
-      ),
-      feedbackColorXY: asColor(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorXY", NODE_SNAP_DEFAULTS.feedbackColorXY),
-        NODE_SNAP_DEFAULTS.feedbackColorXY
-      ),
-      feedbackBadgeBg: asColor(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeBg", NODE_SNAP_DEFAULTS.feedbackBadgeBg),
-        NODE_SNAP_DEFAULTS.feedbackBadgeBg
-      ),
-      feedbackBadgeText: asColor(
-        getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeText", NODE_SNAP_DEFAULTS.feedbackBadgeText),
-        NODE_SNAP_DEFAULTS.feedbackBadgeText
-      ),
+      hMarginPx: asNumber(getSettingValue("comfyuiBlockSpace.nodeSnap.hMarginPx", NODE_SNAP_DEFAULTS.hMarginPx), NODE_SNAP_DEFAULTS.hMarginPx),
+      vMarginPx: asNumber(getSettingValue("comfyuiBlockSpace.nodeSnap.vMarginPx", NODE_SNAP_DEFAULTS.vMarginPx), NODE_SNAP_DEFAULTS.vMarginPx),
+      moveStrength: asNumber(getSettingValue("comfyuiBlockSpace.nodeSnap.moveStrength", NODE_SNAP_DEFAULTS.moveStrength), NODE_SNAP_DEFAULTS.moveStrength),
+      moveYSnapStrength: asNumber(getSettingValue("comfyuiBlockSpace.nodeSnap.moveYSnapStrength", NODE_SNAP_DEFAULTS.moveYSnapStrength), NODE_SNAP_DEFAULTS.moveYSnapStrength),
+      resizeStrength: asNumber(getSettingValue("comfyuiBlockSpace.nodeSnap.resizeStrength", NODE_SNAP_DEFAULTS.resizeStrength), NODE_SNAP_DEFAULTS.resizeStrength),
+      dimensionTolerancePx: asNumber(getSettingValue("comfyuiBlockSpace.nodeSnap.dimensionTolerancePx", NODE_SNAP_DEFAULTS.dimensionTolerancePx), NODE_SNAP_DEFAULTS.dimensionTolerancePx),
+      highlightEnabled: asBool(getSettingValue("comfyuiBlockSpace.nodeSnap.highlightEnabled", NODE_SNAP_DEFAULTS.highlightEnabled), NODE_SNAP_DEFAULTS.highlightEnabled),
+      highlightColor: asColor(getSettingValue("comfyuiBlockSpace.nodeSnap.highlightColor", NODE_SNAP_DEFAULTS.highlightColor), NODE_SNAP_DEFAULTS.highlightColor),
+      highlightWidth: asNumber(getSettingValue("comfyuiBlockSpace.nodeSnap.highlightWidth", NODE_SNAP_DEFAULTS.highlightWidth), NODE_SNAP_DEFAULTS.highlightWidth),
+      feedbackEnabled: asBool(getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackEnabled", NODE_SNAP_DEFAULTS.feedbackEnabled), NODE_SNAP_DEFAULTS.feedbackEnabled),
+      feedbackPulseMs: asNumber(getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackPulseMs", NODE_SNAP_DEFAULTS.feedbackPulseMs), NODE_SNAP_DEFAULTS.feedbackPulseMs),
+      feedbackBadgeMs: asNumber(getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeMs", NODE_SNAP_DEFAULTS.feedbackBadgeMs), NODE_SNAP_DEFAULTS.feedbackBadgeMs),
+      feedbackBadgeCooldownMs: asNumber(getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeCooldownMs", NODE_SNAP_DEFAULTS.feedbackBadgeCooldownMs), NODE_SNAP_DEFAULTS.feedbackBadgeCooldownMs),
+      feedbackColorX: asColor(getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorX", NODE_SNAP_DEFAULTS.feedbackColorX), NODE_SNAP_DEFAULTS.feedbackColorX),
+      feedbackColorY: asColor(getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorY", NODE_SNAP_DEFAULTS.feedbackColorY), NODE_SNAP_DEFAULTS.feedbackColorY),
+      feedbackColorXY: asColor(getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorXY", NODE_SNAP_DEFAULTS.feedbackColorXY), NODE_SNAP_DEFAULTS.feedbackColorXY),
+      feedbackBadgeBg: asColor(getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeBg", NODE_SNAP_DEFAULTS.feedbackBadgeBg), NODE_SNAP_DEFAULTS.feedbackBadgeBg),
+      feedbackBadgeText: asColor(getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackBadgeText", NODE_SNAP_DEFAULTS.feedbackBadgeText), NODE_SNAP_DEFAULTS.feedbackBadgeText),
     });
   }
 }
@@ -346,16 +224,20 @@ function hideStandaloneHudInComfyUI() {
 }
 
 function registerConnectorSettings() {
+  const cat = ["comfyuiBlockSpace", "1. Connector Settings"];
+  
   addSetting({
     id: "comfyuiBlockSpace.connector.flowColor",
-    name: "Block Space: Flow Color",
+    name: "Flow Color",
+    category: cat,
     type: "text",
     defaultValue: CONNECTOR_DEFAULTS.flowColor,
     onChange: applyConnectorSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.connector.preferredStyle",
-    name: "Block Space: Preferred Connector Style",
+    name: "Preferred Style",
+    category: cat,
     type: "combo",
     options: ["hybrid", "straight", "angled"],
     defaultValue: CONNECTOR_DEFAULTS.preferredStyle,
@@ -363,207 +245,239 @@ function registerConnectorSettings() {
   });
   addSetting({
     id: "comfyuiBlockSpace.connector.enableHybrid",
-    name: "Block Space: Enable Connector Hybrid",
+    name: "Enable Hybrid Nodes",
+    category: cat,
     type: "boolean",
     defaultValue: CONNECTOR_DEFAULTS.enableHybrid,
     onChange: applyConnectorSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.connector.enableStraight",
-    name: "Block Space: Enable Connector Straight",
+    name: "Enable Straight Nodes",
+    category: cat,
     type: "boolean",
     defaultValue: CONNECTOR_DEFAULTS.enableStraight,
     onChange: applyConnectorSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.connector.enableAngled",
-    name: "Block Space: Enable Connector Angled",
+    name: "Enable Angled Nodes",
+    category: cat,
     type: "boolean",
     defaultValue: CONNECTOR_DEFAULTS.enableAngled,
     onChange: applyConnectorSettings,
   });
 }
 
-function registerGridSettings() {
-  addSetting({
-    id: "comfyuiBlockSpace.smartgrid.rowPadding",
-    name: "Block Space: Grid Pad",
-    type: "number",
-    defaultValue: GRID_DEFAULTS.rowPadding,
-    onChange: applyGridSettings,
-  });
-  addSetting({
-    id: "comfyuiBlockSpace.smartgrid.rowTopPadding",
-    name: "Block Space: Top Pad",
-    type: "number",
-    defaultValue: GRID_DEFAULTS.rowTopPadding,
-    onChange: applyGridSettings,
-  });
-  addSetting({
-    id: "comfyuiBlockSpace.smartgrid.rowBottomPadding",
-    name: "Block Space: Bottom Pad",
-    type: "number",
-    defaultValue: GRID_DEFAULTS.rowBottomPadding,
-    onChange: applyGridSettings,
-  });
-  addSetting({
-    id: "comfyuiBlockSpace.smartgrid.nodeVerticalGap",
-    name: "Block Space: Node Gap",
-    type: "number",
-    defaultValue: GRID_DEFAULTS.nodeVerticalGap,
-    onChange: applyGridSettings,
-  });
-  addSetting({
-    id: "comfyuiBlockSpace.smartgrid.borderJunctionGap",
-    name: "Block Space: Border Gap",
-    type: "number",
-    defaultValue: GRID_DEFAULTS.borderJunctionGap,
-    onChange: applyGridSettings,
-  });
-  addSetting({
-    id: "comfyuiBlockSpace.smartgrid.gridLineWidth",
-    name: "Block Space: Divider Width",
-    type: "number",
-    defaultValue: GRID_DEFAULTS.gridLineWidth,
-    onChange: applyGridSettings,
-  });
-  addSetting({
-    id: "comfyuiBlockSpace.smartgrid.gridLineColor",
-    name: "Block Space: Divider Color",
-    type: "text",
-    defaultValue: GRID_DEFAULTS.gridLineColor,
-    onChange: applyGridSettings,
-  });
-  addSetting({
-    id: "comfyuiBlockSpace.smartgrid.gridLineStyle",
-    name: "Block Space: Divider Style",
-    type: "combo",
-    options: ["solid", "dashed", "dotted", "double"],
-    defaultValue: GRID_DEFAULTS.gridLineStyle,
-    onChange: applyGridSettings,
-  });
-  addSetting({
-    id: "comfyuiBlockSpace.smartgrid.edgeToEdgeSnapGapPx",
-    name: "Block Space: Edge Snap Gap",
-    type: "number",
-    defaultValue: GRID_DEFAULTS.edgeToEdgeSnapGapPx,
-    onChange: applyGridSettings,
-  });
-}
-
 function registerNodeSnapSettings() {
+  const catCore = ["comfyuiBlockSpace", "2. Snapping Margins & Strength"];
+  const catVisual = ["comfyuiBlockSpace", "3. Visual Guide Lines"];
+  const catFeedback = ["comfyuiBlockSpace", "4. Snap Badges & Pulses"];
+
+  // --- Core Math ---
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.hMarginPx",
-    name: "Block Space: H Snap Margin",
+    name: "Horizontal Gap Margin (px)",
+    category: catCore,
     type: "number",
     defaultValue: NODE_SNAP_DEFAULTS.hMarginPx,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.vMarginPx",
-    name: "Block Space: V Snap Margin",
+    name: "Vertical Gap Margin (px)",
+    category: catCore,
     type: "number",
     defaultValue: NODE_SNAP_DEFAULTS.vMarginPx,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.moveStrength",
-    name: "Block Space: Move Snap Strength",
+    name: "X-Axis Snap Strength",
+    category: catCore,
     type: "number",
     defaultValue: NODE_SNAP_DEFAULTS.moveStrength,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.moveYSnapStrength",
+    name: "Y-Axis Snap Strength",
+    category: catCore,
+    type: "number",
+    defaultValue: NODE_SNAP_DEFAULTS.moveYSnapStrength,
+    onChange: applyNodeSnapSettings,
+  });
+  addSetting({
     id: "comfyuiBlockSpace.nodeSnap.resizeStrength",
-    name: "Block Space: Resize Snap Strength",
+    name: "Resize Snap Strength",
+    category: catCore,
     type: "number",
     defaultValue: NODE_SNAP_DEFAULTS.resizeStrength,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.dimensionTolerancePx",
+    name: "Cluster Tolerance (px)",
+    category: catCore,
+    type: "number",
+    defaultValue: NODE_SNAP_DEFAULTS.dimensionTolerancePx,
+    attrs: { min: 1, max: 64, step: 1 },
+    onChange: applyNodeSnapSettings,
+  });
+
+  // --- Visual Guidelines ---
+  addSetting({
     id: "comfyuiBlockSpace.nodeSnap.highlightEnabled",
-    name: "Block Space: Node Snap Highlight Enabled",
+    name: "Enable Alignment Lines",
+    category: catVisual,
     type: "boolean",
     defaultValue: NODE_SNAP_DEFAULTS.highlightEnabled,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.highlightColor",
-    name: "Block Space: Node Snap Highlight Color",
+    name: "Line Color",
+    category: catVisual,
     type: "text",
     defaultValue: NODE_SNAP_DEFAULTS.highlightColor,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.highlightWidth",
-    name: "Block Space: Node Snap Highlight Width",
+    name: "Line Width",
+    category: catVisual,
     type: "number",
     defaultValue: NODE_SNAP_DEFAULTS.highlightWidth,
     onChange: applyNodeSnapSettings,
   });
+
+  // --- Feedback ---
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.feedbackEnabled",
-    name: "Block Space: Snap Feedback Enabled",
+    name: "Enable Badges",
+    category: catFeedback,
     type: "boolean",
     defaultValue: NODE_SNAP_DEFAULTS.feedbackEnabled,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.feedbackPulseMs",
-    name: "Block Space: Snap Pulse Duration (ms)",
+    name: "Node Outline Pulse (ms)",
+    category: catFeedback,
     type: "number",
     defaultValue: NODE_SNAP_DEFAULTS.feedbackPulseMs,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.feedbackBadgeMs",
-    name: "Block Space: Snap Badge Duration (ms)",
+    name: "Badge Display Time (ms)",
+    category: catFeedback,
     type: "number",
     defaultValue: NODE_SNAP_DEFAULTS.feedbackBadgeMs,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.feedbackBadgeCooldownMs",
-    name: "Block Space: Snap Badge Cooldown (ms)",
+    name: "Badge Cooldown (ms)",
+    category: catFeedback,
     type: "number",
     defaultValue: NODE_SNAP_DEFAULTS.feedbackBadgeCooldownMs,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.feedbackColorX",
-    name: "Block Space: Snap Color X",
+    name: "X-Axis Color",
+    category: catFeedback,
     type: "text",
     defaultValue: NODE_SNAP_DEFAULTS.feedbackColorX,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.feedbackColorY",
-    name: "Block Space: Snap Color Y",
+    name: "Y-Axis Color",
+    category: catFeedback,
     type: "text",
     defaultValue: NODE_SNAP_DEFAULTS.feedbackColorY,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.feedbackColorXY",
-    name: "Block Space: Snap Color XY",
+    name: "Corner (XY) Color",
+    category: catFeedback,
     type: "text",
     defaultValue: NODE_SNAP_DEFAULTS.feedbackColorXY,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.feedbackBadgeBg",
-    name: "Block Space: Snap Badge Background",
+    name: "Badge Background",
+    category: catFeedback,
     type: "text",
     defaultValue: NODE_SNAP_DEFAULTS.feedbackBadgeBg,
     onChange: applyNodeSnapSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.nodeSnap.feedbackBadgeText",
-    name: "Block Space: Snap Badge Text Color",
+    name: "Badge Text Color",
+    category: catFeedback,
     type: "text",
     defaultValue: NODE_SNAP_DEFAULTS.feedbackBadgeText,
     onChange: applyNodeSnapSettings,
   });
+}
+
+function injectSettingsIcon() {
+  const styleId = "block-space-icon-style";
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.innerHTML = `
+      .block-space-nav-icon {
+        display: inline-block;
+        vertical-align: text-bottom;
+        margin-right: 8px;
+        width: 18px;
+        height: 18px;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // A sleek vector representing two nodes snapping together with a glowing threshold line
+  const svgIcon = `
+    <svg class="block-space-nav-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 4H10V10H4V4Z" fill="#57b1ff" rx="1"/>
+      <path d="M14 14H20V20H14V14Z" fill="#8dff57" rx="1"/>
+      <path d="M14 4H20V10H14V4Z" fill="transparent" rx="1" stroke="#57b1ff" stroke-width="2"/>
+      <path d="M4 14H10V20H4V14Z" fill="transparent" rx="1" stroke="#8dff57" stroke-width="2"/>
+      <line x1="10" y1="10" x2="14" y2="14" stroke="#b57cff" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 3"/>
+    </svg>
+  `;
+
+  // Silently watch for the ComfyUI Settings modal to open.
+  // We look for the ugly internal ID "comfyuiBlockSpace" and instantly beautify it.
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType === 1) { 
+          const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null, false);
+          let n;
+          while ((n = walker.nextNode())) {
+            const text = n.nodeValue ? n.nodeValue.trim() : "";
+            if (text === "comfyuiBlockSpace") {
+              n.nodeValue = " Block Space"; // Rename it in the DOM
+              const parentElement = n.parentElement;
+              if (parentElement && !parentElement.querySelector('.block-space-nav-icon')) {
+                parentElement.insertAdjacentHTML('afterbegin', svgIcon);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
 app.registerExtension({
@@ -586,11 +500,11 @@ app.registerExtension({
 
     hideStandaloneHudInComfyUI();
     registerConnectorSettings();
-    registerGridSettings();
     registerNodeSnapSettings();
     migrateLegacyNodeSnapMargin();
     applyConnectorSettings();
-    applyGridSettings();
     applyNodeSnapSettings();
+    
+    injectSettingsIcon();
   },
 });

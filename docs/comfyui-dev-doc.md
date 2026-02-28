@@ -245,3 +245,40 @@ The `app.graph` object (an instance of `LGraph`) contains the current topologica
 2. **Defensive Patching:** When hijacking a method (e.g., `onResize`, `onMouseDown`), always capture the `original_method` and `?.apply(this, arguments)` it to prevent breaking other extensions.
 3. **Debugging:** The JS environment runs in the browser. Use `console.log()` and standard Chrome/Firefox DevTools. Force disable the browser cache while developing JS files to prevent ComfyUI from loading stale versions.
 4. **Coordinate Spaces:** LiteGraph uses a dual coordinate system. Be careful to differentiate between Canvas coordinates (absolute virtual space) and Client coordinates (browser window pixels) when handling mouse events.
+
+---
+
+## 8. Detecting Node Visible Edges (Canvas Geometry)
+
+ComfyUI nodes are canvas-rendered, so there is no DOM border element to query. Detect edges from graph geometry:
+
+```javascript
+function getNodeBounds(node) {
+  const left = Number(node.pos[0]) || 0;
+  const top = Number(node.pos[1]) || 0;       // node body top (below title bar)
+  const width = Math.max(0, Number(node.size[0]) || 0);
+  const height = Math.max(0, Number(node.size[1]) || 0);
+  return { left, top, right: left + width, bottom: top + height };
+}
+```
+
+### Important: True Visual Top Edge
+
+`node.pos[1]` is typically the body top, not the full visual top including title.  
+To draw overlays on the real top border:
+
+```javascript
+const titleH = Number(LiteGraph.NODE_TITLE_HEIGHT) || 24;
+const fullTop = bounds.top - titleH;
+const fullHeight = (bounds.bottom - bounds.top) + titleH;
+```
+
+### Canvas-to-Client Conversion (for DOM overlays)
+
+```javascript
+const scale = canvas.ds.scale;
+const x = graphX * scale + canvas.ds.offset[0];
+const y = graphY * scale + canvas.ds.offset[1];
+```
+
+Use `fullTop/fullHeight` when you need border-accurate overlays that include the title bar.
