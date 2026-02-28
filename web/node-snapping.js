@@ -74,10 +74,7 @@
 
   function getHSnapMargin() {
     return clampNumber(
-      getSettingValue(
-        "comfyuiBlockSpace.nodeSnap.hMarginPx",
-        getSettingValue("comfyuiBlockSpace.nodeSnap.marginPx", DEFAULT_H_SNAP_MARGIN)
-      ),
+      getSettingValue("comfyuiBlockSpace.nodeSnap.hMarginPx", DEFAULT_H_SNAP_MARGIN),
       0,
       500,
       DEFAULT_H_SNAP_MARGIN
@@ -86,15 +83,25 @@
 
   function getVSnapMargin() {
     var base = clampNumber(
-      getSettingValue(
-        "comfyuiBlockSpace.nodeSnap.vMarginPx",
-        getSettingValue("comfyuiBlockSpace.nodeSnap.marginPx", DEFAULT_V_SNAP_MARGIN)
-      ),
+      getSettingValue("comfyuiBlockSpace.nodeSnap.vMarginPx", DEFAULT_V_SNAP_MARGIN),
       0,
       500,
       DEFAULT_V_SNAP_MARGIN
     );
     return clampNumber(base * V_SNAP_MARGIN_VISUAL_MULTIPLIER, 0, 1000, DEFAULT_V_SNAP_MARGIN);
+  }
+
+  function getSnapThreshold() {
+    return clampNumber(
+      getSettingValue("comfyuiBlockSpace.nodeSnap.sensitivity", SNAP_THRESHOLD),
+      2,
+      50,
+      SNAP_THRESHOLD
+    );
+  }
+
+  function isSnappingEnabled() {
+    return !!getSettingValue("comfyuiBlockSpace.nodeSnap.enabled", true);
   }
 
   function getMoveSnapStrength() {

@@ -1,6 +1,6 @@
 import { app } from "/scripts/app.js";
 
-const ASSET_VERSION = "2026-02-27-resize-margin-fix";
+const ASSET_VERSION = "2026-02-27-settings-expansion-v1";
 
 function addSetting(definition) {
   const settings = app && app.ui && app.ui.settings;
@@ -30,6 +30,7 @@ function getSettingValue(id, fallback) {
 function applyConnectorSettings() {
   const isEnabled = getSettingValue("BlockSpace.EnableCustomConnectors", true);
   const connectorStyle = getSettingValue("BlockSpace.ConnectorStyle", "hybrid");
+  const stubLength = getSettingValue("BlockSpace.ConnectorStubLength", 34);
   
   // Update connection-focus.js settings
   if (!window.ConnectionFocusSettings) {
@@ -37,10 +38,11 @@ function applyConnectorSettings() {
   }
   window.ConnectionFocusSettings.enabled = isEnabled;
   window.ConnectionFocusSettings.connectorStyle = connectorStyle;
+  window.ConnectionFocusSettings.connectorStubLength = stubLength;
 }
 
 function registerBlockSpaceSettings() {
-  // Toggle to enable/disable custom connectors
+  // --- Section: Connectors ---
   addSetting({
     id: "BlockSpace.EnableCustomConnectors",
     name: "Enable Custom Connectors",
@@ -49,7 +51,6 @@ function registerBlockSpaceSettings() {
     onChange: applyConnectorSettings,
   });
   
-  // Dropdown to select connector style
   addSetting({
     id: "BlockSpace.ConnectorStyle",
     name: "Connector Style",
@@ -58,8 +59,71 @@ function registerBlockSpaceSettings() {
     defaultValue: "hybrid",
     onChange: applyConnectorSettings,
   });
+
+  addSetting({
+    id: "BlockSpace.ConnectorStubLength",
+    name: "Connector Stub Length",
+    type: "slider",
+    attrs: { min: 10, max: 80, step: 1 },
+    defaultValue: 34,
+    onChange: applyConnectorSettings,
+  });
+
+  // --- Section: Snapping ---
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.enabled",
+    name: "Enable Snapping",
+    type: "boolean",
+    defaultValue: true,
+  });
+
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.sensitivity",
+    name: "Snap Sensitivity (px)",
+    type: "slider",
+    attrs: { min: 4, max: 30, step: 1 },
+    defaultValue: 10,
+  });
+
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.hMarginPx",
+    name: "Horizontal Snap Margin",
+    type: "slider",
+    attrs: { min: 0, max: 200, step: 2 },
+    defaultValue: 60,
+  });
+
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.vMarginPx",
+    name: "Vertical Snap Margin",
+    type: "slider",
+    attrs: { min: 0, max: 200, step: 2 },
+    defaultValue: 60,
+  });
+
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.highlightEnabled",
+    name: "Show Alignment Guides",
+    type: "boolean",
+    defaultValue: true,
+  });
+
+  // --- Section: Visuals ---
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.feedbackPulseMs",
+    name: "Snap Pulse Duration (ms)",
+    type: "slider",
+    attrs: { min: 0, max: 1000, step: 20 },
+    defaultValue: 160,
+  });
+
+  addSetting({
+    id: "comfyuiBlockSpace.nodeSnap.highlightColor",
+    name: "Guide Line Color",
+    type: "text",
+    defaultValue: "#1a3a6b",
+  });
   
-  // Apply initial setting
   applyConnectorSettings();
 }
 
@@ -75,6 +139,17 @@ function injectSettingsIcon() {
         margin-right: 8px;
         width: 18px;
         height: 18px;
+      }
+      .block-space-color-swatch {
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        border: 1px solid #444;
+        display: inline-block;
+        vertical-align: middle;
+        margin-left: 8px;
+        cursor: pointer;
+        background: #000;
       }
     `;
     document.head.appendChild(style);
@@ -94,11 +169,12 @@ function injectSettingsIcon() {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node.nodeType === 1) {
+          // --- Logic 1: Better Node Labeling ---
           const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null, false);
           let n;
           while ((n = walker.nextNode())) {
             const text = n.nodeValue ? n.nodeValue.trim() : "";
-            if (text === "BlockSpace") {
+            if (text === "BlockSpace" || text === "comfyuiBlockSpace.nodeSnap") {
               n.nodeValue = " Block Space";
               const parentElement = n.parentElement;
               if (parentElement && !parentElement.querySelector('.block-space-nav-icon')) {
@@ -106,6 +182,36 @@ function injectSettingsIcon() {
               }
             }
           }
+
+          // --- Logic 2: Color Picker Enhancement ---
+          const colorInputs = node.querySelectorAll('input[type="text"]');
+          colorInputs.forEach(input => {
+            const row = input.closest('tr');
+            if (row && row.textContent.includes('Guide Line Color')) {
+              if (row.querySelector('.block-space-color-swatch')) return;
+
+              const swatch = document.createElement('div');
+              swatch.className = 'block-space-color-swatch';
+              swatch.style.backgroundColor = input.value;
+              
+              const picker = document.createElement('input');
+              picker.type = 'color';
+              picker.style.display = 'none';
+              picker.value = input.value;
+
+              swatch.onclick = () => picker.click();
+              picker.oninput = (e) => {
+                const color = e.target.value;
+                input.value = color;
+                swatch.style.backgroundColor = color;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+              };
+
+              input.after(swatch);
+              input.after(picker);
+            }
+          });
         }
       }
     }
