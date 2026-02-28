@@ -207,4 +207,6 @@ marimo/_lsp/
 __marimo__/
 
 .gemini/
+.geminiignore
+GEMINI.md
 gha-creds-*.json
