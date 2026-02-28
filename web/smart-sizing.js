@@ -202,7 +202,7 @@
     minHeight += 6;
 
     var resizing = isNodeBeingResized(this);
-    if (!resizing && !this.__smartGridManaged && this.__smartUserSize && this.__smartUserSize.length >= 2) {
+    if (!resizing && this.__smartUserSize && this.__smartUserSize.length >= 2) {
       minWidth = Math.max(minWidth, this.__smartUserSize[0]);
       minHeight = Math.max(minHeight, this.__smartUserSize[1]);
     }

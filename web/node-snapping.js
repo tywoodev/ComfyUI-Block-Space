@@ -1390,7 +1390,7 @@
   }
 
   function applyResizeSnapping(canvas, resizingNode, resizeAxisLock, resizeDelta) {
-    if (!canvas || !resizingNode || resizingNode.constructor === window.LGraphGroup || resizingNode.__smartGridManaged) {
+    if (!canvas || !resizingNode || resizingNode.constructor === window.LGraphGroup) {
       return false;
     }
 
