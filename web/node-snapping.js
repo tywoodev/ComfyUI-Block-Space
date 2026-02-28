@@ -500,6 +500,53 @@
     return memory;
   }
 
+  function ensureMoveXPointMemory(canvas, activeNode, hSnapMargin) {
+    if (!canvas || !activeNode) return null;
+    var memory = canvas.__blockSpaceMoveXPointMemory;
+    if (memory && memory.nodeId === activeNode.id) return memory;
+    
+    var allNodes = getGraphNodes(canvas);
+    var activeBounds = getNodeBounds(activeNode);
+    if (!activeBounds) return null;
+
+    var selectedNodesMap = canvas.selected_nodes || null;
+    var padding = 1500;
+    var points = [];
+    var activeWidth = activeBounds.right - activeBounds.left;
+
+    for (var nIdx = 0; nIdx < allNodes.length; nIdx++) {
+      var node = allNodes[nIdx];
+      if (!node || node === activeNode || node.constructor === window.LGraphGroup) continue;
+      if (selectedNodesMap && node.id != null && selectedNodesMap[node.id]) continue;
+      
+      var bounds = getNodeBounds(node);
+      if (!bounds) continue;
+
+      var isNearX = bounds.right >= (activeBounds.left - padding) && bounds.left <= (activeBounds.right + padding);
+      var isNearY = bounds.bottom >= (activeBounds.top - padding) && bounds.top <= (activeBounds.bottom + padding);
+
+      if (isNearX && isNearY) {
+        // Flush Aligns
+        points.push({ value: bounds.left, node: node, type: "left_flush" });
+        points.push({ value: bounds.right - activeWidth, node: node, type: "right_flush" });
+        points.push({ value: bounds.left + (bounds.right - bounds.left)*0.5 - activeWidth*0.5, node: node, type: "center_flush" });
+
+        // Stacking Margins
+        points.push({ value: bounds.right + hSnapMargin, node: node, type: "stack_right" });
+        points.push({ value: bounds.left - hSnapMargin - activeWidth, node: node, type: "stack_left" });
+      }
+    }
+    
+    memory = {
+      nodeId: activeNode.id,
+      tolerancePx: getDimensionTolerancePx(),
+      points: points,
+      createdAt: Date.now(),
+    };
+    canvas.__blockSpaceMoveXPointMemory = memory;
+    return memory;
+  }
+
   function getDragDelta(canvas, event) {
     if (!canvas || !event || typeof event.canvasX !== "number" || typeof event.canvasY !== "number") {
       return { dx: 0, dy: 0 };
@@ -1292,17 +1339,42 @@
     var xDidSnapMove = false;
     var yDidSnapMove = false;
 
-    var xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, xSearchDistance, "x", "left", "right", false, false, selectedNodesMap);
-    var xCandidate = null;
+    // --- X Axis Snapping ---
+    var moveXMemory = ensureMoveXPointMemory(this, activeNode, hSnapMargin);
+    var moveXClusters = moveXMemory ? buildDimensionClusters(moveXMemory.points, moveXMemory.tolerancePx) : [];
+    var xWinner = pickNearestMoveCluster(moveXClusters, activeBounds.left);
+    
+    var xMode = null;
+    var xTarget = null;
+    var xDelta = Infinity;
+    var xLine = null;
+    var xWinnerNodes = [];
+
     if (xWinner) {
-      xCandidate = computeWinningXCandidate(activeBounds, xWinner, hSnapMargin, false);
-      if (xCandidate.delta <= currentThresholdX) {
-        activeNode.pos[0] = xCandidate.targetX;
-        didSnap = true;
-        xDidSnapMove = true;
+      xDelta = Math.abs(activeBounds.left - xWinner.center);
+      xTarget = xWinner.center;
+      // Heuristic for guide rendering: find if any member is a right-edge or center anchor
+      xMode = "left_flush";
+      var xNodeSeen = {};
+      for (var xm = 0; xm < xWinner.members.length; xm++) {
+        var m = xWinner.members[xm];
+        if (m.type === "right_flush" || m.type === "stack_right") xMode = "right_flush";
+        else if (m.type === "center_flush") xMode = "center_flush";
+        
+        if (m.node && m.node.id != null && !xNodeSeen[m.node.id]) {
+          xNodeSeen[m.node.id] = true;
+          xWinnerNodes.push(m.node);
+        }
       }
     }
 
+    if (xWinner && xDelta <= currentThresholdX) {
+      activeNode.pos[0] = xTarget;
+      didSnap = true;
+      xDidSnapMove = true;
+    }
+
+    // --- Y Axis Snapping ---
     var moveYMemory = ensureMoveYPointMemory(this, activeNode, vSnapMargin);
     var moveYClusters = moveYMemory ? buildDimensionClusters(moveYMemory.points, moveYMemory.tolerancePx) : [];
     var topWinner = pickNearestMoveCluster(moveYClusters, activeBounds.top);
@@ -1356,8 +1428,8 @@
 
     this.__blockSpaceResizeDebugStatus = {
       active: true, axis: "move",
-      xWinnerNodes: (xDidSnapMove && xWinner) ? [xWinner.node] : [],
-      xDidSnap: xDidSnapMove, xMode: xCandidate ? xCandidate.mode : null, xTarget: xCandidate ? xCandidate.targetX : null,
+      xWinnerNodes: xWinnerNodes,
+      xDidSnap: xDidSnapMove, xMode: xMode, xTarget: xTarget,
       yWinnerNodes: moveYWinnerNodes,
       yDidSnap: yDidSnapMove, yTarget: moveYTarget, yLine: moveYLine,
       didSnap: didSnap,
@@ -1385,6 +1457,7 @@
     clearSnapVisual(this);
     clearSnapFeedbackState(this, true);
     this.__blockSpacePrevDragPoint = null;
+    this.__blockSpaceMoveXPointMemory = null;
     this.__blockSpaceMoveYPointMemory = null;
     this.__blockSpacePrevResizeSize = null;
     this.__blockSpaceResizeDimensionMemory = null;

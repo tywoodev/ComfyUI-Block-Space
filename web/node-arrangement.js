@@ -45,13 +45,11 @@
     }
     if (nodes.length < 2) return;
 
-    // --- UNDO SUPPORT START ---
     if (canvas.graph) canvas.graph.beforeChange();
 
     var settings = getSettings();
     var titleH = Number(window.LiteGraph && window.LiteGraph.NODE_TITLE_HEIGHT) || 24;
 
-    // ... (rest of sorting logic)
     nodes.sort(function(a, b) {
       if (Math.abs(a.pos[1] - b.pos[1]) > 5) return a.pos[1] - b.pos[1];
       return a.pos[0] - b.pos[0];
@@ -61,6 +59,9 @@
     var startY = anchor.pos[1];
 
     if (mode === "grid") {
+      // --- SMART HARMONIZED GRID ---
+      
+      // A. Group into Columns based on X position
       var columns = [];
       var sortedByX = nodes.slice().sort((a, b) => a.pos[0] - b.pos[0]);
       
@@ -68,6 +69,7 @@
         var node = sortedByX[i];
         var placed = false;
         for (var c = 0; c < columns.length; c++) {
+          // If node is horizontally near an existing column average, add it
           var avgX = columns[c].reduce((sum, n) => sum + n.pos[0], 0) / columns[c].length;
           if (Math.abs(node.pos[0] - avgX) < 150) {
             columns[c].push(node);
@@ -78,7 +80,9 @@
         if (!placed) columns.push([node]);
       }
 
+      // Sort nodes within each column by Y
       columns.forEach(col => col.sort((a, b) => a.pos[1] - b.pos[1]));
+      // Sort columns themselves by average X
       columns.sort((a, b) => (a[0].pos[0] - b[0].pos[0]));
 
       var colWidths = columns.map(col => Math.max(...col.map(n => getNodeBounds(n).width)));
@@ -123,9 +127,7 @@
       }
     }
 
-    // --- UNDO SUPPORT END ---
     if (canvas.graph) canvas.graph.afterChange();
-
     canvas.dirty_canvas = true;
     canvas.dirty_bgcanvas = true;
   }
@@ -133,16 +135,21 @@
   // --- Floating Panel UI ---
 
   var panel = null;
+  var STORAGE_KEY = "block-space-arrangement-panel-pos";
 
   function createPanel() {
     if (panel) return panel;
+    
+    // Robust check for existing DOM element to prevent duplicates on script reload
+    var existing = document.getElementById("block-space-arrangement-panel");
+    if (existing) {
+      panel = existing;
+      return panel;
+    }
 
     panel = document.createElement("div");
     panel.id = "block-space-arrangement-panel";
     panel.style.position = "fixed";
-    panel.style.top = "20px";
-    panel.style.left = "50%";
-    panel.style.transform = "translateX(-50%)";
     panel.style.backgroundColor = "rgba(30, 30, 30, 0.95)";
     panel.style.border = "1px solid #444";
     panel.style.borderRadius = "8px";
@@ -156,14 +163,83 @@
     panel.style.transition = "opacity 0.2s ease, transform 0.2s ease";
     panel.style.pointerEvents = "auto";
 
-    var label = document.createElement("span");
-    label.innerText = "📐 Block Space";
-    label.style.color = "#888";
-    label.style.fontSize = "11px";
-    label.style.fontWeight = "bold";
-    label.style.marginRight = "6px";
-    label.style.whiteSpace = "nowrap";
-    panel.appendChild(label);
+    // Restore Position
+    var savedPos = localStorage.getItem(STORAGE_KEY);
+    if (savedPos) {
+      try {
+        var pos = JSON.parse(savedPos);
+        panel.style.left = pos.x + "px";
+        panel.style.top = pos.y + "px";
+        panel.style.transform = "none";
+      } catch(e) {
+        panel.style.top = "20px";
+        panel.style.left = "50%";
+        panel.style.transform = "translateX(-50%)";
+      }
+    } else {
+      panel.style.top = "20px";
+      panel.style.left = "50%";
+      panel.style.transform = "translateX(-50%)";
+    }
+
+    var handle = document.createElement("div");
+    handle.style.display = "flex";
+    handle.style.alignItems = "center";
+    handle.style.cursor = "grab";
+    handle.style.userSelect = "none";
+    handle.style.marginRight = "8px";
+    handle.style.paddingRight = "8px";
+    handle.style.borderRight = "1px solid #444";
+
+    var dragIcon = `
+      <span style="color:#666; font-size:14px; margin-right:6px; font-family:monospace;">⠿</span>
+    `;
+
+    var svgIcon = `
+      <svg class="block-space-nav-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:16px; height:16px; margin-right:8px; vertical-align:middle; pointer-events:none;">
+        <path d="M4 4H10V10H4V4Z" fill="#57b1ff" rx="1"/>
+        <path d="M14 14H20V20H14V14Z" fill="#8dff57" rx="1"/>
+        <path d="M14 4H20V10H14V4Z" fill="transparent" rx="1" stroke="#57b1ff" stroke-width="2"/>
+        <path d="M4 14H10V20H4V14Z" fill="transparent" rx="1" stroke="#8dff57" stroke-width="2"/>
+        <line x1="10" y1="10" x2="14" y2="14" stroke="#b57cff" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 3"/>
+      </svg>
+    `;
+
+    handle.innerHTML = dragIcon + svgIcon + `<span style="color:#888; font-size:11px; font-weight:bold; white-space:nowrap;">Block Space</span>`;
+    panel.appendChild(handle);
+
+    // --- Dragging Logic ---
+    var isDragging = false;
+    var offsetX, offsetY;
+
+    handle.onmousedown = function(e) {
+      isDragging = true;
+      handle.style.cursor = "grabbing";
+      var rect = panel.getBoundingClientRect();
+      offsetX = e.clientX - rect.left;
+      offsetY = e.clientY - rect.top;
+      panel.style.transition = "none";
+      e.preventDefault();
+    };
+
+    window.addEventListener("mousemove", function(e) {
+      if (!isDragging) return;
+      var nx = e.clientX - offsetX;
+      var ny = e.clientY - offsetY;
+      panel.style.left = nx + "px";
+      panel.style.top = ny + "px";
+      panel.style.transform = "none";
+    });
+
+    window.addEventListener("mouseup", function() {
+      if (!isDragging) return;
+      isDragging = false;
+      handle.style.cursor = "grab";
+      panel.style.transition = "opacity 0.2s ease, transform 0.2s ease";
+      
+      var rect = panel.getBoundingClientRect();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ x: rect.left, y: rect.top }));
+    });
 
     var createBtn = function(text, icon, callback) {
       var btn = document.createElement("button");
@@ -222,16 +298,24 @@
       if (p.style.display === "none") {
         p.style.display = "flex";
         p.style.opacity = "0";
-        p.style.transform = "translateX(-50%) translateY(-10px)";
-        setTimeout(function() {
-          p.style.opacity = "1";
-          p.style.transform = "translateX(-50%) translateY(0)";
-        }, 10);
+        // Only apply entrance animation if not dragged
+        if (!localStorage.getItem(STORAGE_KEY)) {
+          p.style.transform = "translateX(-50%) translateY(-10px)";
+          setTimeout(function() {
+            p.style.opacity = "1";
+            p.style.transform = "translateX(-50%) translateY(0)";
+          }, 10);
+        } else {
+          setTimeout(function() { p.style.opacity = "1"; }, 10);
+        }
       }
     } else {
       if (p.style.display === "flex") {
         p.style.opacity = "0";
-        p.style.transform = "translateX(-50%) translateY(-10px)";
+        // Only apply exit animation if not dragged
+        if (!localStorage.getItem(STORAGE_KEY)) {
+          p.style.transform = "translateX(-50%) translateY(-10px)";
+        }
         setTimeout(function() {
           p.style.display = "none";
         }, 200);
@@ -239,8 +323,11 @@
     }
   }
 
-  // Poll for selection changes
-  setInterval(updatePanelVisibility, 200);
+  // Ensure only one poller is active across script reloads
+    if (window.__blockSpaceArrangementPoller) {
+      clearInterval(window.__blockSpaceArrangementPoller);
+    }
+    window.__blockSpaceArrangementPoller = setInterval(updatePanelVisibility, 200);
 
-  console.log("[BlockSpace] Harmonized Column Grid loaded.");
+  console.log("[BlockSpace] Draggable Arrangement Panel loaded.");
 })();
