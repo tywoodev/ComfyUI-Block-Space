@@ -7,18 +7,23 @@ The goal: build, read, and maintain complex node graphs with pixel-perfect preci
 ## Key Features
 
 ### 1. Auto-Arrange & Harmonize
-
 Instantly transform messy node clusters into perfectly aligned blocks using our dedicated arrangement panel.
+
+![Arrangement Panel](assets/panel-preview.png)
 
 - **↕️ Stack:** Perfectly aligns your selection into a tight vertical column.
 - **↔️ Flow:** Organizes nodes into a clean horizontal row.
 - **💎 Harmonize:** Our flagship "Zen" layout. It intelligently detects columns, ensures every node in a column has the same width, and stretches nodes to create a perfectly flush, professional grid.
+
+![Harmonize Preview](assets/harmonize-preview.png)
+
 - **Floating Panel:** A sleek UI that appears automatically when multiple nodes are selected. You can drag it anywhere on your screen, and it will remember its position for your next session.
 - **Safe Editing:** Every arrangement action fully supports `Ctrl+Z` (Undo), so you can experiment with layouts worry-free.
 
 ### 2. High-Fidelity Snapping
-
 Precision snapping that understands the visual geometry of your nodes.
+
+![Snapping Preview](assets/snapping-preview.png)
 
 - **True Margins:** Snapping is 100% accurate to your settings, correctly accounting for node title bars so your gaps are always exactly the number of pixels you intended.
 - **Smart Alignment:** Effortlessly snap to edges, centers, or specific margins. The system "feels" where you want a node to go and locks it in place.
