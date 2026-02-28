@@ -1292,7 +1292,7 @@
     var xDidSnapMove = false;
     var yDidSnapMove = false;
 
-    var xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, xSearchDistance, "x", "left", null, false, false, selectedNodesMap);
+    var xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, xSearchDistance, "x", "left", "right", false, false, selectedNodesMap);
     var xCandidate = null;
     if (xWinner) {
       xCandidate = computeWinningXCandidate(activeBounds, xWinner, hSnapMargin, false);
