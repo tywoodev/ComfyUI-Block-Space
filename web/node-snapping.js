@@ -33,6 +33,16 @@
   var MOVE_Y_STICKY_MIN_PX = 24;
   var DIMENSION_ASSOC_LAYER_ID = "block-space-dimension-association-layer";
 
+  var HIGHLIGHT_COLOR_MAP = {
+    "Comfy Blue": "#1a3a6b",
+    "Cyber Purple": "#b57cff",
+    "Neon Green": "#39ff14",
+    "Hot Pink": "#ff00ae",
+    "Ghost White": "#ffffff",
+    "Amber Gold": "#ffd700",
+    "Signal Orange": "#ff4500",
+  };
+
   var originalProcessMouseMove = window.LGraphCanvas.prototype.processMouseMove;
   var originalProcessMouseUp = window.LGraphCanvas.prototype.processMouseUp;
 
@@ -148,7 +158,10 @@
   }
 
   function getHighlightColor() {
-    var value = getSettingValue("BlockSpace.Snap.HighlightColor", DEFAULT_HIGHLIGHT_COLOR);
+    var value = getSettingValue("BlockSpace.Snap.HighlightColor", "Comfy Blue");
+    if (HIGHLIGHT_COLOR_MAP[value]) {
+      return HIGHLIGHT_COLOR_MAP[value];
+    }
     return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_HIGHLIGHT_COLOR;
   }
 
@@ -1645,6 +1658,7 @@
     var titleH = Number(window.LiteGraph && window.LiteGraph.NODE_TITLE_HEIGHT) || 24;
     var titlePx = Math.max(0, Math.round(titleH * scale));
     var borderW = 2;
+    var guideColor = getHighlightColor();
 
     function appendLine(x, y, w, h, color) {
       var line = document.createElement("div");
@@ -1718,7 +1732,7 @@
              lineXClient -= borderW / 2;
           }
 
-          appendLine(lineXClient, top, borderW, height, "#3b82f6");
+          appendLine(lineXClient, top, borderW, height, guideColor);
         } else {
           // --- Resize Mode ---
           if (status.xMode === "edge_align_right") {
@@ -1727,11 +1741,11 @@
              var anchorCanvasX = isLeftEdge ? bounds.left : bounds.right;
              var lineXClient = graphToClient(canvas, anchorCanvasX, bounds.top).x;
              if (!isLeftEdge) lineXClient -= borderW;
-             appendLine(lineXClient, top, borderW, height, "#3b82f6");
+             appendLine(lineXClient, top, borderW, height, guideColor);
           } else {
              // Dimension match (Draw box)
-             appendLine(left, top, borderW, height, "#3b82f6");
-             appendLine(left + width - borderW, top, borderW, height, "#3b82f6");
+             appendLine(left, top, borderW, height, guideColor);
+             appendLine(left + width - borderW, top, borderW, height, guideColor);
           }
         }
       }
@@ -1749,7 +1763,7 @@
             lineYClient -= titlePx;
           }
 
-          appendLine(left, lineYClient, width, borderW, "#39ff14");
+          appendLine(left, lineYClient, width, borderW, guideColor);
         } else {
           // --- Resize Mode ---
           if (status.yMode === "edge_align_bottom") {
@@ -1758,11 +1772,11 @@
              var anchorCanvasY = isTopEdge ? bounds.top : bounds.bottom;
              var lineYClient = graphToClient(canvas, bounds.left, anchorCanvasY).y;
              if (isTopEdge) lineYClient -= titlePx;
-             appendLine(left, lineYClient, width, borderW, "#39ff14");
+             appendLine(left, lineYClient, width, borderW, guideColor);
           } else {
              // Dimension match (Draw box)
-             appendLine(left, top, width, borderW, "#39ff14");
-             appendLine(left, top + height - borderW, width, borderW, "#39ff14");
+             appendLine(left, top, width, borderW, guideColor);
+             appendLine(left, top + height - borderW, width, borderW, guideColor);
           }
         }
       }
