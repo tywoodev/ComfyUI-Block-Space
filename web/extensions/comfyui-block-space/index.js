@@ -159,6 +159,11 @@ function injectSettingsIcon() {
         width: 18px;
         height: 18px;
       }
+      /* Change cursor to question mark for help icons in our settings */
+      .comfy-setting-row:has([id^="BlockSpace."]) .comfy-help-icon,
+      tr:has([id^="BlockSpace."]) .comfy-help-icon {
+        cursor: help !important;
+      }
     `;
     document.head.appendChild(style);
   }
