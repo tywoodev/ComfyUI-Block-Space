@@ -49,6 +49,7 @@ function registerBlockSpaceSettings() {
     type: "boolean",
     defaultValue: true,
     onChange: applyConnectorSettings,
+    tooltip: "Toggle high-fidelity connector rendering with animated flow tracing.",
   });
   
   addSetting({
@@ -58,6 +59,7 @@ function registerBlockSpaceSettings() {
     options: ["hybrid", "straight", "angled"],
     defaultValue: "hybrid",
     onChange: applyConnectorSettings,
+    tooltip: "Choose the routing algorithm for node wires. Hybrid is recommended for most workflows.",
   });
 
   addSetting({
@@ -67,6 +69,7 @@ function registerBlockSpaceSettings() {
     attrs: { min: 10, max: 80, step: 1 },
     defaultValue: 34,
     onChange: applyConnectorSettings,
+    tooltip: "Adjust the length of the straight wire segment emerging from node ports.",
   });
 
   // --- Section: Snapping ---
@@ -75,6 +78,7 @@ function registerBlockSpaceSettings() {
     name: "Enable Snapping",
     type: "boolean",
     defaultValue: true,
+    tooltip: "Enable automatic node alignment and resizing guides.",
   });
 
   addSetting({
@@ -83,6 +87,7 @@ function registerBlockSpaceSettings() {
     type: "slider",
     attrs: { min: 4, max: 30, step: 1 },
     defaultValue: 10,
+    tooltip: "The distance in pixels at which nodes will pull into alignment.",
   });
 
   addSetting({
@@ -91,6 +96,7 @@ function registerBlockSpaceSettings() {
     type: "slider",
     attrs: { min: 0, max: 200, step: 2 },
     defaultValue: 60,
+    tooltip: "The preferred gap distance when snapping nodes side-by-side.",
   });
 
   addSetting({
@@ -99,6 +105,7 @@ function registerBlockSpaceSettings() {
     type: "slider",
     attrs: { min: 0, max: 200, step: 2 },
     defaultValue: 60,
+    tooltip: "The preferred gap distance when snapping nodes vertically.",
   });
 
   addSetting({
@@ -106,6 +113,7 @@ function registerBlockSpaceSettings() {
     name: "Show Alignment Guides",
     type: "boolean",
     defaultValue: true,
+    tooltip: "Display dotted lines showing exactly which nodes are being used for alignment.",
   });
 
   // --- Section: Visuals ---
@@ -115,6 +123,7 @@ function registerBlockSpaceSettings() {
     type: "slider",
     attrs: { min: 0, max: 1000, step: 20 },
     defaultValue: 160,
+    tooltip: "How long the node border glows after a successful snap. Set to 0 to disable.",
   });
 
   addSetting({
@@ -122,15 +131,16 @@ function registerBlockSpaceSettings() {
     name: "Guide Line Color",
     type: "combo",
     options: [
-      { value: "#1a3a6b", label: "Comfy Blue" },
-      { value: "#b57cff", label: "Cyber Purple" },
-      { value: "#39ff14", label: "Neon Green" },
-      { value: "#ff00ae", label: "Hot Pink" },
-      { value: "#ffffff", label: "Ghost White" },
-      { value: "#ffd700", label: "Amber Gold" },
-      { value: "#ff4500", label: "Signal Orange" },
+      "Comfy Blue",
+      "Cyber Purple",
+      "Neon Green",
+      "Hot Pink",
+      "Ghost White",
+      "Amber Gold",
+      "Signal Orange",
     ],
-    defaultValue: "#1a3a6b",
+    defaultValue: "Comfy Blue",
+    tooltip: "Choose the color for snapping alignment guides.",
   });
   
   applyConnectorSettings();
