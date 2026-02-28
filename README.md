@@ -7,6 +7,7 @@ The goal: build, read, and maintain complex node graphs with pixel-perfect preci
 ---
 
 ## 1. High-Fidelity Snapping & Harmonizing
+
 Precision snapping that understands the visual geometry of your nodes. 
 
 ![Snapping & Harmonizing](assets/snap-harmonize.gif)
@@ -16,6 +17,7 @@ Precision snapping that understands the visual geometry of your nodes.
 - **Visual Guides:** Dotted alignment lines appear during drags and resizes to frame your nodes and show exactly which edges are being aligned.
 
 ## 2. Animated Flow Visualization
+
 Gain instant clarity on your data flow with high-visibility animations and port indicators.
 
 ![Animated Connectors](assets/animated-connectors.gif)
@@ -25,6 +27,7 @@ Gain instant clarity on your data flow with high-visibility animations and port 
 - **White-Dashed Overlays:** Animated overlays ensure you can see your active connections clearly against any background or node color.
 
 ## 3. Custom Connector Types
+
 Choose the aesthetic that best fits your workflow and reduces visual noise.
 
 ![Connector Types](assets/connector-types.gif)
@@ -34,6 +37,7 @@ Choose the aesthetic that best fits your workflow and reduces visual noise.
 - **Angled Style:** A technical, "circuit-board" aesthetic that creates very clear horizontal and vertical pathways, ideal for highly structured layouts.
 
 ## 4. Shift to Bypass Snapping
+
 Handle intricate positioning with ease without fighting the alignment engine.
 
 ![Shift to Bypass](assets/shift-to-bypass.gif)
@@ -42,13 +46,13 @@ Handle intricate positioning with ease without fighting the alignment engine.
 - **Total Control:** Bypass gives you the freedom to handle unique edge cases without needing to toggle snapping off in the settings menu.
 
 ## 5. Professional Settings Panel
+
 Customize your experience with an intuitive, branded interface.
 
 ![Settings](assets/settings.gif)
 
-- **Branded Icons:** Category-specific SVG branding makes navigation fast and intuitive.
 - **Informative Tooltips:** Hover over any setting name for a detailed explanation of its behavior.
-- **Real-Time Updates:** Most settings apply immediately, allowing you to fine-tune your margins and colors without refreshing your browser.
+- **Real-Time Updates:** Most settings apply immediately, allowing you to fine-tune your margins and colors without refreshing your browser. (A refresh is required after changing the ConnectorStyle)
 
 ---
 

@@ -1016,12 +1016,14 @@
       }
     } else if (snap.kind === "resize") {
       var minSize = getNodeMinSize(node);
+      var titleH = Number(window.LiteGraph && window.LiteGraph.NODE_TITLE_HEIGHT) || 24;
       if (snap.xDidSnap && typeof snap.xTargetRight === "number" && Math.abs(bounds.right - snap.xTargetRight) <= tolerance) {
         node.size[0] = Math.max(minSize[0], snap.xTargetRight - bounds.left);
         appliedX = true;
       }
       if (snap.yDidSnap && typeof snap.yTargetBottom === "number" && Math.abs(bounds.bottom - snap.yTargetBottom) <= tolerance) {
-        node.size[1] = Math.max(minSize[1], snap.yTargetBottom - bounds.top);
+        // Subtract title bar height to get content height
+        node.size[1] = Math.max(minSize[1], (snap.yTargetBottom - bounds.top) - titleH);
         appliedY = true;
       }
     }
