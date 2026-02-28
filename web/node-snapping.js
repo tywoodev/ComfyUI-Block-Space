@@ -14,7 +14,7 @@
   var DEFAULT_V_SNAP_MARGIN = 40;
   var DEFAULT_MOVE_SNAP_STRENGTH = 1.0;
   var DEFAULT_MOVE_Y_SNAP_STRENGTH = 2.4;
-  var DEFAULT_RESIZE_SNAP_STRENGTH = 1.8;
+  var DEFAULT_RESIZE_SNAP_STRENGTH = 2.4; // Increased from 1.8 for better catch
   var DEFAULT_DIMENSION_TOLERANCE_PX = 12;
   var DEFAULT_HIGHLIGHT_ENABLED = true;
   var DEFAULT_HIGHLIGHT_COLOR = "#1a3a6b";
@@ -387,8 +387,9 @@
     var activeBounds = getNodeBounds(resizingNode);
     if (!activeBounds) return null;
 
-    // --- UNIVERSAL NEIGHBOR SEARCH ---
-    var searchRadius = 1500;
+    // --- ENVELOPE NEIGHBOR SEARCH ---
+    // Look for any node that is within a large visual distance of our boundaries.
+    var padding = 1500;
     var targetNodes = [];
     for (var nIdx = 0; nIdx < allNodes.length; nIdx++) {
       var n = allNodes[nIdx];
@@ -396,9 +397,10 @@
       var b = getNodeBounds(n);
       if (!b) continue;
       
-      var dx = Math.abs(b.centerX - activeBounds.centerX);
-      var dy = Math.abs(b.centerY - activeBounds.centerY);
-      if (dx < searchRadius && dy < searchRadius) {
+      var isNearX = b.right >= (activeBounds.left - padding) && b.left <= (activeBounds.right + padding);
+      var isNearY = b.bottom >= (activeBounds.top - padding) && b.top <= (activeBounds.bottom + padding);
+      
+      if (isNearX && isNearY) {
         targetNodes.push(n);
       }
     }
@@ -425,16 +427,14 @@
       // 2. Right-Edge Alignment Targets
       rightEdgeSamples.push({ value: bounds.right, node: node });
       rightEdgeSamples.push({ value: bounds.left, node: node });
-      // Add minute offset to margin-adjusted points to ensure distinct clusters
-      rightEdgeSamples.push({ value: bounds.left - hSnapMargin + 0.001, node: node });
-      rightEdgeSamples.push({ value: bounds.right + hSnapMargin - 0.001, node: node });
+      // Margin-adjusted (Gap to their left)
+      rightEdgeSamples.push({ value: bounds.left - hSnapMargin, node: node });
 
       // 3. Bottom-Edge Alignment Targets
       bottomEdgeSamples.push({ value: bounds.bottom, node: node });
       bottomEdgeSamples.push({ value: bounds.top, node: node });
-      // Add minute offset to margin-adjusted points to ensure distinct clusters
-      bottomEdgeSamples.push({ value: bounds.top - vSnapMargin + 0.001, node: node });
-      bottomEdgeSamples.push({ value: bounds.bottom + vSnapMargin - 0.001, node: node });
+      // Margin-adjusted (Gap above them)
+      bottomEdgeSamples.push({ value: bounds.top - vSnapMargin, node: node });
     }
     var tolerancePx = getDimensionTolerancePx();
     memory = {
@@ -466,8 +466,8 @@
 
     var selectedNodesMap = canvas.selected_nodes || null;
     
-    // --- UNIVERSAL NEIGHBOR SEARCH ---
-    var searchRadius = 1500;
+    // --- ENVELOPE NEIGHBOR SEARCH ---
+    var padding = 1500;
     var points = [];
     var activeHeight = activeBounds.bottom - activeBounds.top;
 
@@ -479,17 +479,16 @@
       var bounds = getNodeBounds(node);
       if (!bounds) continue;
 
-      var dx = Math.abs(bounds.centerX - activeBounds.centerX);
-      var dy = Math.abs(bounds.centerY - activeBounds.centerY);
-      if (dx < searchRadius && dy < searchRadius) {
+      var isNearX = bounds.right >= (activeBounds.left - padding) && bounds.left <= (activeBounds.right + padding);
+      var isNearY = bounds.bottom >= (activeBounds.top - padding) && bounds.top <= (activeBounds.bottom + padding);
+
+      if (isNearX && isNearY) {
         // Flush Aligns
         points.push({ value: bounds.top, node: node, type: "top_flush" });
         points.push({ value: bounds.bottom - activeHeight, node: node, type: "bottom_flush" });
         
         // Stacking Margins
-        // 1. I am BELOW the target: my top = target.bottom + margin
         points.push({ value: bounds.bottom + vSnapMargin, node: node, type: "stack_below" });
-        // 2. I am ABOVE the target: my top = target.top - margin - myHeight
         points.push({ value: bounds.top - vSnapMargin - activeHeight, node: node, type: "stack_above" });
       }
     }
@@ -498,6 +497,11 @@
       nodeId: activeNode.id,
       tolerancePx: getDimensionTolerancePx(),
       points: points,
+      createdAt: Date.now(),
+    };
+    canvas.__blockSpaceMoveYPointMemory = memory;
+    return memory;
+  }
       createdAt: Date.now(),
     };
     canvas.__blockSpaceMoveYPointMemory = memory;
@@ -1431,6 +1435,7 @@
     var bestYDelta = Infinity;
     var bestYMode = null;
     var bestYNodes = [];
+    var titleH = Number(window.LiteGraph && window.LiteGraph.NODE_TITLE_HEIGHT) || 24;
 
     if (heightWinner) {
       bestYDelta = Math.abs(currentHeight - heightWinner.center);
@@ -1458,9 +1463,11 @@
     var currentThresholdY = wasSnappedY ? exitThresholdCanvas : thresholdCanvas;
 
     if (bestYHeight !== null && bestYDelta <= currentThresholdY) {
-      var nextHeight = Math.max(minSize[1], bestYHeight);
-      if (isFinite(nextHeight) && Math.abs(nextHeight - currentHeight) > 0.01) {
-        resizingNode.size[1] = nextHeight;
+      // CRITICAL: node.size[1] is CONTENT height only. 
+      // We must subtract the title bar height from our target total height.
+      var nextContentHeight = Math.max(minSize[1], bestYHeight - titleH);
+      if (isFinite(nextContentHeight) && Math.abs(nextContentHeight - resizingNode.size[1]) > 0.01) {
+        resizingNode.size[1] = nextContentHeight;
         didSnap = true;
         status.yDidSnap = true;
         status.yTarget = bestYHeight;
@@ -1760,7 +1767,6 @@
           var isTopEdge = Math.abs(snapLineY - bounds.top) < Math.abs(snapLineY - bounds.bottom);
           var anchorCanvasY = isTopEdge ? bounds.top : bounds.bottom;
           var lineYClient = graphToClient(canvas, bounds.left, anchorCanvasY).y;
-          if (!isTopEdge) lineYClient -= borderW;
 
           appendLine(left, lineYClient, width, borderW, guideColor);
         } else {
@@ -1770,7 +1776,6 @@
              var isTopEdge = Math.abs(snappedCanvasY - bounds.top) < Math.abs(snappedCanvasY - bounds.bottom);
              var anchorCanvasY = isTopEdge ? bounds.top : bounds.bottom;
              var lineYClient = graphToClient(canvas, bounds.left, anchorCanvasY).y;
-             if (!isTopEdge) lineYClient -= borderW;
              appendLine(left, lineYClient, width, borderW, guideColor);
           } else {
              // Dimension match (Draw box)
