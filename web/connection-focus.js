@@ -339,7 +339,7 @@
     return null;
   }
 
-  function drawFlowOverlay(canvas, argsLike, animationTime, sourceOffset, targetOffset, color) {
+  function drawFlowOverlay(canvas, argsLike, animationTime, sourceOffset, targetOffset) {
     if (!canvas || !argsLike || !argsLike.length) {
       return;
     }
@@ -360,17 +360,18 @@
     var bx = b[0];
     var by = b[1];
     var settings = getFocusSettings();
-    // Use provided color or fall back to pulseColor
-    var flowColor = color || settings.pulseColor;
+    // Use high-visibility white for the animation pulse
+    var flowColor = "#ffffff"; 
     var dashOffset = -((animationTime || 0) * 0.028);
     var prevLineWidth = ctx.lineWidth || 1;
     var stub = settings.connectorStubLength;
 
     ctx.save();
-    ctx.globalAlpha = Math.min(1, ctx.globalAlpha * 0.95);
-    ctx.lineWidth = Math.max(1.1, prevLineWidth + 0.2);
+    // Slightly transparent white for the "glow" effect
+    ctx.globalAlpha = 0.8;
+    ctx.lineWidth = Math.max(1.2, prevLineWidth + 0.4);
     ctx.strokeStyle = flowColor;
-    ctx.setLineDash([5, 11]);
+    ctx.setLineDash([6, 10]);
     ctx.lineDashOffset = dashOffset;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -419,7 +420,7 @@
     ctx.restore();
   }
 
-  function drawHardAngleLink(argsLike, sourceOffset, targetOffset) {
+  function drawHardAngleLink(argsLike, sourceOffset, targetOffset, color) {
     if (!argsLike || !argsLike.length) {
       return;
     }
@@ -441,6 +442,9 @@
     var stub = settings.connectorStubLength;
 
     ctx.save();
+    if (color) {
+      ctx.strokeStyle = color;
+    }
     ctx.lineJoin = "miter";
     ctx.lineCap = "round";
     drawConfiguredPath(
@@ -557,14 +561,18 @@
       return originalRenderLink.apply(this, arguments);
     }
 
-    var focus = getActiveFocus(this);
-    if (!focus) {
-      return drawHardAngleLink(arguments);
-    }
-
     var link = extractLinkInfo(arguments);
     if (!link) {
       return originalRenderLink.apply(this, arguments);
+    }
+
+    // Resolve the slot color (port color) early
+    var originNode = this.graph.getNodeById(link.origin_id);
+    var slotColor = getSlotColor(originNode, false, link.origin_slot);
+
+    var focus = getActiveFocus(this);
+    if (!focus) {
+      return drawHardAngleLink(arguments, 0, 0, slotColor);
     }
 
     var linkKey = link.id != null ? link.id : null;
@@ -577,7 +585,7 @@
     if (!isConnected) {
       ctx.save();
       ctx.globalAlpha = ctx.globalAlpha * 0.12;
-      var dimResult = drawHardAngleLink(arguments);
+      var dimResult = drawHardAngleLink(arguments, 0, 0, slotColor);
       ctx.restore();
       return dimResult;
     }
@@ -596,12 +604,9 @@
       }
     }
 
-    var result = drawHardAngleLink(arguments, sourceOffset, targetOffset);
+    var result = drawHardAngleLink(arguments, sourceOffset, targetOffset, slotColor);
     if (link.origin_id === focus.activeNodeId || link.target_id === focus.activeNodeId) {
-      // Get the slot color from the origin node (output slot)
-      var originNode = this.graph.getNodeById(link.origin_id);
-      var slotColor = getSlotColor(originNode, false, link.origin_slot);
-      drawFlowOverlay(this, arguments, focus.animationTime || 0, sourceOffset, targetOffset, slotColor);
+      drawFlowOverlay(this, arguments, focus.animationTime || 0, sourceOffset, targetOffset);
     }
     return result;
   };
