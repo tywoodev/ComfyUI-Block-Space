@@ -314,14 +314,11 @@
         continue;
       }
       if (intent === "expand") {
-        if (c.center > currentDim) {
-          filtered.push(c);
-        }
+        if (c.center > currentDim) filtered.push(c);
       } else if (intent === "shrink") {
-        if (c.center < currentDim) {
-          filtered.push(c);
-        }
+        if (c.center < currentDim) filtered.push(c);
       } else {
+        // "steady" or "neutral" - include everything to find closest
         filtered.push(c);
       }
     }
@@ -331,12 +328,8 @@
     filtered.sort(function (a, b) {
       var da = Math.abs(a.center - currentDim);
       var db = Math.abs(b.center - currentDim);
-      if (da !== db) {
-        return da - db;
-      }
-      if (a.count !== b.count) {
-        return b.count - a.count;
-      }
+      if (da !== db) return da - db;
+      if (a.count !== b.count) return b.count - a.count;
       return b.center - a.center;
     });
     return filtered[0];
@@ -349,12 +342,8 @@
     var sorted = clusters.slice().sort(function (a, b) {
       var da = Math.abs(Number(a.center) - currentValue);
       var db = Math.abs(Number(b.center) - currentValue);
-      if (da !== db) {
-        return da - db;
-      }
-      if ((a.count || 0) !== (b.count || 0)) {
-        return (b.count || 0) - (a.count || 0);
-      }
+      if (da !== db) return da - db;
+      if ((a.count || 0) !== (b.count || 0)) return (b.count || 0) - (a.count || 0);
       return (b.center || 0) - (a.center || 0);
     });
     return sorted[0];
@@ -370,51 +359,58 @@
     }
 
     var allNodes = getGraphNodes(canvas);
-    
-    // --- RAYCAST FILTER (Depth: 2) ---
-    // Grabs immediate neighbors AND the layer of nodes directly behind them.
-    var targetNodes = getRaycastNeighbors(resizingNode, allNodes, 30, 2);
+    var activeBounds = getNodeBounds(resizingNode);
+    if (!activeBounds) return null;
+
+    // --- UNIVERSAL NEIGHBOR SEARCH ---
+    var searchRadius = 1500;
+    var targetNodes = [];
+    for (var nIdx = 0; nIdx < allNodes.length; nIdx++) {
+      var n = allNodes[nIdx];
+      if (!n || n === resizingNode || n.constructor === window.LGraphGroup) continue;
+      var b = getNodeBounds(n);
+      if (!b) continue;
+      
+      var dx = Math.abs(b.centerX - activeBounds.centerX);
+      var dy = Math.abs(b.centerY - activeBounds.centerY);
+      if (dx < searchRadius && dy < searchRadius) {
+        targetNodes.push(n);
+      }
+    }
 
     var widthSamples = [];
     var heightSamples = [];
     var rightEdgeSamples = [];
     var bottomEdgeSamples = [];
-    
-    // Get snap margins for margin-adjusted edge positions
+
     var hSnapMargin = getHSnapMargin();
     var vSnapMargin = getVSnapMargin();
 
-    // Loop through the smartly filtered list instead of the entire graph
     for (var i = 0; i < targetNodes.length; i += 1) {
       var node = targetNodes[i];
-      if (!node || node === resizingNode || node.constructor === window.LGraphGroup) {
-        continue;
-      }
       var bounds = getNodeBounds(node);
-      if (!bounds) {
-        continue;
-      }
-      
-      // Dimension Clustering
-      var width = bounds.right - bounds.left;
-      var height = bounds.bottom - bounds.top;
-      if (isFinite(width) && width > 0) widthSamples.push({ value: width, node: node });
-      if (isFinite(height) && height > 0) heightSamples.push({ value: height, node: node });
-      
-      // Positional Edge Clustering - include both raw edges and margin-adjusted positions
-      rightEdgeSamples.push({ value: bounds.left, node: node });
-      rightEdgeSamples.push({ value: bounds.right, node: node });
-      // Add margin-adjusted horizontal positions (for right-edge snapping with gap)
-      rightEdgeSamples.push({ value: bounds.left - hSnapMargin, node: node });
-      rightEdgeSamples.push({ value: bounds.right + hSnapMargin, node: node });
-      
-      bottomEdgeSamples.push({ value: bounds.top, node: node });
-      bottomEdgeSamples.push({ value: bounds.bottom, node: node });
-      // Add margin-adjusted vertical positions (for bottom-edge snapping with gap)
-      bottomEdgeSamples.push({ value: bounds.top - vSnapMargin, node: node });
-      bottomEdgeSamples.push({ value: bounds.bottom + vSnapMargin, node: node });
-    }
+      if (!bounds) continue;
 
+      // 1. Dimension Match Targets
+      var targetWidth = bounds.right - bounds.left;
+      var targetHeight = bounds.bottom - bounds.top;
+      if (isFinite(targetWidth) && targetWidth > 0) widthSamples.push({ value: targetWidth, node: node });
+      if (isFinite(targetHeight) && targetHeight > 0) heightSamples.push({ value: targetHeight, node: node });
+
+      // 2. Right-Edge Alignment Targets
+      rightEdgeSamples.push({ value: bounds.right, node: node });
+      rightEdgeSamples.push({ value: bounds.left, node: node });
+      // Add minute offset to margin-adjusted points to ensure distinct clusters
+      rightEdgeSamples.push({ value: bounds.left - hSnapMargin + 0.001, node: node });
+      rightEdgeSamples.push({ value: bounds.right + hSnapMargin - 0.001, node: node });
+
+      // 3. Bottom-Edge Alignment Targets
+      bottomEdgeSamples.push({ value: bounds.bottom, node: node });
+      bottomEdgeSamples.push({ value: bounds.top, node: node });
+      // Add minute offset to margin-adjusted points to ensure distinct clusters
+      bottomEdgeSamples.push({ value: bounds.top - vSnapMargin + 0.001, node: node });
+      bottomEdgeSamples.push({ value: bounds.bottom + vSnapMargin - 0.001, node: node });
+    }
     var tolerancePx = getDimensionTolerancePx();
     memory = {
       nodeId: resizingNode.id,
@@ -440,33 +436,30 @@
     }
     
     var allNodes = getGraphNodes(canvas);
+    var activeBounds = getNodeBounds(activeNode);
+    if (!activeBounds) return null;
+
     var selectedNodesMap = canvas.selected_nodes || null;
     
-    // --- IMPLEMENTING THE ADJACENCY FILTER ---
-    // Instead of using allNodes, we filter down to the "Green Box"
-    // We pass a 30px tolerance to allow for slightly misaligned nodes to still be recognized as neighbors.
-    var adjacentNodes = getRaycastNeighbors(activeNode, allNodes, 30, 2);
-    
+    // --- UNIVERSAL NEIGHBOR SEARCH ---
+    var searchRadius = 1500;
     var points = [];
-    // Loop over adjacentNodes instead of allNodes
-    for (var i = 0; i < adjacentNodes.length; i += 1) {
-      var node = adjacentNodes[i];
-      if (!node || node === activeNode || node.constructor === window.LGraphGroup) {
-        continue;
-      }
-      // Exclude other selected nodes from being snap targets
-      if (selectedNodesMap && node.id != null && selectedNodesMap[node.id]) {
-        continue;
-      }
+    for (var nIdx = 0; nIdx < allNodes.length; nIdx++) {
+      var node = allNodes[nIdx];
+      if (!node || node === activeNode || node.constructor === window.LGraphGroup) continue;
+      if (selectedNodesMap && node.id != null && selectedNodesMap[node.id]) continue;
+      
       var bounds = getNodeBounds(node);
-      if (!bounds) {
-        continue;
+      if (!bounds) continue;
+
+      var dx = Math.abs(bounds.centerX - activeBounds.centerX);
+      var dy = Math.abs(bounds.centerY - activeBounds.centerY);
+      if (dx < searchRadius && dy < searchRadius) {
+        points.push({ value: bounds.top, node: node, type: "top" });
+        points.push({ value: bounds.bottom, node: node, type: "bottom" });
+        points.push({ value: bounds.top - vSnapMargin + 0.001, node: node, type: "top_minus_margin" });
+        points.push({ value: bounds.bottom + vSnapMargin - 0.001, node: node, type: "bottom_plus_margin" });
       }
-      // Add alignment lines to the cluster pool
-      points.push({ value: bounds.top, node: node, type: "top" });
-      points.push({ value: bounds.bottom, node: node, type: "bottom" });
-      points.push({ value: bounds.top - vSnapMargin, node: node, type: "top_minus_margin" });
-      points.push({ value: bounds.bottom + vSnapMargin, node: node, type: "bottom_plus_margin" });
     }
     
     memory = {
@@ -542,77 +535,6 @@
   function rangesOverlap(aMin, aMax, bMin, bMax, tolerance) {
     var tol = Number(tolerance) || 0;
     return Math.min(aMax, bMax) - Math.max(aMin, bMin) >= -tol;
-  }
-
-  // Consolidated Raycast Function (Replaces getImmediateNeighbors)
-  function getRaycastNeighbors(activeNode, allNodes, tolerance, depth) {
-    var activeBounds = getNodeBounds(activeNode);
-    if (!activeBounds) return allNodes;
-
-    var leftHits = [], rightHits = [], topHits = [], bottomHits = [];
-
-    // 1. Raycast on all 4 axes and collect intersecting nodes
-    for (var i = 0; i < allNodes.length; i++) {
-      var n = allNodes[i];
-      if (n === activeNode || n.constructor === window.LGraphGroup) continue;
-      var b = getNodeBounds(n);
-      if (!b) continue;
-
-      // X-Axis Raycast (Must overlap vertically)
-      if (rangesOverlap(activeBounds.top, activeBounds.bottom, b.top, b.bottom, tolerance)) {
-        if (b.centerX < activeBounds.centerX) {
-          leftHits.push({ bounds: b, dist: Math.max(0, activeBounds.left - b.right) });
-        } else {
-          rightHits.push({ bounds: b, dist: Math.max(0, b.left - activeBounds.right) });
-        }
-      }
-
-      // Y-Axis Raycast (Must overlap horizontally)
-      if (rangesOverlap(activeBounds.left, activeBounds.right, b.left, b.right, tolerance)) {
-        if (b.centerY < activeBounds.centerY) {
-          topHits.push({ bounds: b, dist: Math.max(0, activeBounds.top - b.bottom) });
-        } else {
-          bottomHits.push({ bounds: b, dist: Math.max(0, b.top - activeBounds.bottom) });
-        }
-      }
-    }
-
-    // 2. Sort hits by proximity to the active node
-    var sortFn = function(a, b) { return a.dist - b.dist; };
-    leftHits.sort(sortFn); 
-    rightHits.sort(sortFn);
-    topHits.sort(sortFn); 
-    bottomHits.sort(sortFn);
-
-    // 3. Define the envelope boundary based on requested 'depth'
-    var maxGap = depth * 800; // Expand fallback search area based on depth
-
-    var getBound = function(hits, prop, activeRef, sign) {
-      if (hits.length === 0) return activeRef + (maxGap * sign);
-      var idx = Math.min(depth - 1, hits.length - 1); // Get node at requested depth
-      return hits[idx].bounds[prop] + (tolerance * sign);
-    };
-
-    var minX = getBound(leftHits, 'left', activeBounds.left, -1);
-    var maxX = getBound(rightHits, 'right', activeBounds.right, 1);
-    var minY = getBound(topHits, 'top', activeBounds.top, -1);
-    var maxY = getBound(bottomHits, 'bottom', activeBounds.bottom, 1);
-
-    // 4. Collect nodes inside the calculated envelope
-    var neighbors = [];
-    for (var j = 0; j < allNodes.length; j++) {
-      var targetNode = allNodes[j];
-      if (targetNode === activeNode || targetNode.constructor === window.LGraphGroup) continue;
-      var targetBounds = getNodeBounds(targetNode);
-      if (!targetBounds) continue;
-
-      if (targetBounds.centerX >= minX && targetBounds.centerX <= maxX &&
-          targetBounds.centerY >= minY && targetBounds.centerY <= maxY) {
-        neighbors.push(targetNode);
-      }
-    }
-
-    return neighbors;
   }
 
   function collectValidTargetsForAxis(
@@ -1431,25 +1353,30 @@
     // --- Resolve X Axis ---
     var bestXWidth = null;
     var bestXDelta = Infinity;
+    var bestXMode = null;
+    var bestXNodes = [];
 
+    // Prioritize Dimension Match slightly if distances are very similar
     if (widthWinner) {
-      var delta = Math.abs(currentWidth - widthWinner.center);
-      if (delta < bestXDelta) {
-        bestXDelta = delta;
-        bestXWidth = widthWinner.center;
-        status.xMode = "dimension_match";
-        status.xWinnerNodes = widthWinner.members.map(function(m){ return m.node; }).filter(n => !!n);
-      }
+      bestXDelta = Math.abs(currentWidth - widthWinner.center);
+      bestXWidth = widthWinner.center;
+      bestXMode = "dimension_match";
+      bestXNodes = widthWinner.members.map(function(m){ return m.node; }).filter(n => !!n);
     }
+    
     if (rightEdgeWinner) {
-      var delta = Math.abs(currentRight - rightEdgeWinner.center);
-      if (delta < bestXDelta) {
-        bestXDelta = delta;
-        bestXWidth = rightEdgeWinner.center - bounds.left; // Convert coordinate distance to width
-        status.xMode = "edge_align_right";
-        status.xWinnerNodes = rightEdgeWinner.members.map(function(m){ return m.node; }).filter(n => !!n);
+      var edgeDelta = Math.abs(currentRight - rightEdgeWinner.center);
+      // Only switch from width match to edge alignment if it's significantly closer (2px bias)
+      if (edgeDelta < (bestXDelta - 2)) {
+        bestXDelta = edgeDelta;
+        bestXWidth = rightEdgeWinner.center - bounds.left;
+        bestXMode = "edge_align_right";
+        bestXNodes = rightEdgeWinner.members.map(function(m){ return m.node; }).filter(n => !!n);
       }
     }
+    
+    status.xMode = bestXMode;
+    status.xWinnerNodes = bestXNodes;
 
     // Apply hysteresis logic for X
     var recentSnap = canvas.__blockSpaceRecentSnap;
@@ -1470,25 +1397,29 @@
     // --- Resolve Y Axis ---
     var bestYHeight = null;
     var bestYDelta = Infinity;
+    var bestYMode = null;
+    var bestYNodes = [];
 
     if (heightWinner) {
-      var delta = Math.abs(currentHeight - heightWinner.center);
-      if (delta < bestYDelta) {
-        bestYDelta = delta;
-        bestYHeight = heightWinner.center;
-        status.yMode = "dimension_match";
-        status.yWinnerNodes = heightWinner.members.map(function(m){ return m.node; }).filter(n => !!n);
-      }
+      bestYDelta = Math.abs(currentHeight - heightWinner.center);
+      bestYHeight = heightWinner.center;
+      bestYMode = "dimension_match";
+      bestYNodes = heightWinner.members.map(function(m){ return m.node; }).filter(n => !!n);
     }
+    
     if (bottomEdgeWinner) {
-      var delta = Math.abs(currentBottom - bottomEdgeWinner.center);
-      if (delta < bestYDelta) {
-        bestYDelta = delta;
-        bestYHeight = bottomEdgeWinner.center - bounds.top; // Convert coordinate distance to height
-        status.yMode = "edge_align_bottom";
-        status.yWinnerNodes = bottomEdgeWinner.members.map(function(m){ return m.node; }).filter(n => !!n);
+      var edgeDeltaY = Math.abs(currentBottom - bottomEdgeWinner.center);
+      // Only switch from height match to edge alignment if it's significantly closer (2px bias)
+      if (edgeDeltaY < (bestYDelta - 2)) {
+        bestYDelta = edgeDeltaY;
+        bestYHeight = bottomEdgeWinner.center - bounds.top;
+        bestYMode = "edge_align_bottom";
+        bestYNodes = bottomEdgeWinner.members.map(function(m){ return m.node; }).filter(n => !!n);
       }
     }
+    
+    status.yMode = bestYMode;
+    status.yWinnerNodes = bestYNodes;
 
     // Apply hysteresis logic for Y
     var wasSnappedY = recentSnap && recentSnap.kind === "resize" && recentSnap.nodeId === resizingNode.id && recentSnap.yDidSnap;
