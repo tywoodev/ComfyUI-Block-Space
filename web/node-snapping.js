@@ -11,7 +11,7 @@
   var SNAP_THRESHOLD = 10;
   var EXIT_THRESHOLD_MULTIPLIER = 1.5; // 10px to enter, 15px to exit
   var DEFAULT_H_SNAP_MARGIN = 60;
-  var DEFAULT_V_SNAP_MARGIN = 100;
+  var DEFAULT_V_SNAP_MARGIN = 40;
   var DEFAULT_MOVE_SNAP_STRENGTH = 1.0;
   var DEFAULT_MOVE_Y_SNAP_STRENGTH = 2.4;
   var DEFAULT_RESIZE_SNAP_STRENGTH = 1.8;
@@ -462,6 +462,8 @@
     // --- UNIVERSAL NEIGHBOR SEARCH ---
     var searchRadius = 1500;
     var points = [];
+    var activeHeight = activeBounds.bottom - activeBounds.top;
+
     for (var nIdx = 0; nIdx < allNodes.length; nIdx++) {
       var node = allNodes[nIdx];
       if (!node || node === activeNode || node.constructor === window.LGraphGroup) continue;
@@ -473,10 +475,15 @@
       var dx = Math.abs(bounds.centerX - activeBounds.centerX);
       var dy = Math.abs(bounds.centerY - activeBounds.centerY);
       if (dx < searchRadius && dy < searchRadius) {
-        points.push({ value: bounds.top, node: node, type: "top" });
-        points.push({ value: bounds.bottom, node: node, type: "bottom" });
-        points.push({ value: bounds.top - vSnapMargin + 0.001, node: node, type: "top_minus_margin" });
-        points.push({ value: bounds.bottom + vSnapMargin - 0.001, node: node, type: "bottom_plus_margin" });
+        // Flush Aligns
+        points.push({ value: bounds.top, node: node, type: "top_flush" });
+        points.push({ value: bounds.bottom - activeHeight, node: node, type: "bottom_flush" });
+        
+        // Stacking Margins
+        // 1. I am BELOW the target: my top = target.bottom + margin
+        points.push({ value: bounds.bottom + vSnapMargin, node: node, type: "stack_below" });
+        // 2. I am ABOVE the target: my top = target.top - margin - myHeight
+        points.push({ value: bounds.top - vSnapMargin - activeHeight, node: node, type: "stack_above" });
       }
     }
     
@@ -1653,8 +1660,6 @@
     }
 
     var scale = getCanvasScale(canvas);
-    var titleH = Number(window.LiteGraph && window.LiteGraph.NODE_TITLE_HEIGHT) || 24;
-    var titlePx = Math.max(0, Math.round(titleH * scale));
     var borderW = 2;
     var guideColor = getHighlightColor();
 
@@ -1707,9 +1712,9 @@
         continue;
       }
       var left = topLeft.x;
-      var top = topLeft.y - titlePx;
+      var top = topLeft.y;
       var width = Math.max(0, (bounds.right - bounds.left) * scale);
-      var height = Math.max(0, (bounds.bottom - bounds.top) * scale + titlePx);
+      var height = Math.max(0, (bounds.bottom - bounds.top) * scale);
 
       if (item.width) {
         if (status.axis === "move") {
@@ -1723,12 +1728,7 @@
           }
 
           var lineXClient = graphToClient(canvas, anchorCanvasX, bounds.top).x;
-          
-          if (xMode.indexOf("right") !== -1) {
-             lineXClient -= borderW; 
-          } else if (xMode.indexOf("center") !== -1) {
-             lineXClient -= borderW / 2;
-          }
+          if (xMode.indexOf("right") !== -1) lineXClient -= borderW; 
 
           appendLine(lineXClient, top, borderW, height, guideColor);
         } else {
@@ -1750,16 +1750,10 @@
       if (item.height) {
         if (status.axis === "move") {
           var snapLineY = status.yLine; 
-          
-          // Heuristic: Is the snap line closer to the target's top or bottom?
           var isTopEdge = Math.abs(snapLineY - bounds.top) < Math.abs(snapLineY - bounds.bottom);
-          
           var anchorCanvasY = isTopEdge ? bounds.top : bounds.bottom;
           var lineYClient = graphToClient(canvas, bounds.left, anchorCanvasY).y;
-
-          if (isTopEdge) {
-            lineYClient -= titlePx;
-          }
+          if (!isTopEdge) lineYClient -= borderW;
 
           appendLine(left, lineYClient, width, borderW, guideColor);
         } else {
@@ -1769,7 +1763,7 @@
              var isTopEdge = Math.abs(snappedCanvasY - bounds.top) < Math.abs(snappedCanvasY - bounds.bottom);
              var anchorCanvasY = isTopEdge ? bounds.top : bounds.bottom;
              var lineYClient = graphToClient(canvas, bounds.left, anchorCanvasY).y;
-             if (isTopEdge) lineYClient -= titlePx;
+             if (!isTopEdge) lineYClient -= borderW;
              appendLine(left, lineYClient, width, borderW, guideColor);
           } else {
              // Dimension match (Draw box)
