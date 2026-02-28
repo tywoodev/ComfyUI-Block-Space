@@ -120,7 +120,16 @@ function registerBlockSpaceSettings() {
   addSetting({
     id: "BlockSpace.Snap.HighlightColor",
     name: "Guide Line Color",
-    type: "text",
+    type: "combo",
+    options: [
+      { value: "#1a3a6b", label: "Comfy Blue" },
+      { value: "#b57cff", label: "Cyber Purple" },
+      { value: "#39ff14", label: "Neon Green" },
+      { value: "#ff00ae", label: "Hot Pink" },
+      { value: "#ffffff", label: "Ghost White" },
+      { value: "#ffd700", label: "Amber Gold" },
+      { value: "#ff4500", label: "Signal Orange" },
+    ],
     defaultValue: "#1a3a6b",
   });
   
