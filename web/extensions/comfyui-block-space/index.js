@@ -141,15 +141,21 @@ function injectSettingsIcon() {
         height: 18px;
       }
       .block-space-color-swatch {
-        width: 24px;
-        height: 24px;
+        width: 32px;
+        height: 20px;
         border-radius: 4px;
-        border: 1px solid #444;
+        border: 1px solid rgba(255,255,255,0.2);
         display: inline-block;
         vertical-align: middle;
         margin-left: 8px;
         cursor: pointer;
         background: #000;
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+        transition: transform 0.1s ease, border-color 0.1s ease;
+      }
+      .block-space-color-swatch:hover {
+        transform: scale(1.1);
+        border-color: rgba(255,255,255,0.5);
       }
     `;
     document.head.appendChild(style);
@@ -174,7 +180,7 @@ function injectSettingsIcon() {
           let n;
           while ((n = walker.nextNode())) {
             const text = n.nodeValue ? n.nodeValue.trim() : "";
-            if (text === "BlockSpace" || text === "comfyuiBlockSpace.nodeSnap") {
+            if (text === "BlockSpace" || text === "BlockSpace.Snap") {
               n.nodeValue = " Block Space";
               const parentElement = n.parentElement;
               if (parentElement && !parentElement.querySelector('.block-space-nav-icon')) {
@@ -183,34 +189,47 @@ function injectSettingsIcon() {
             }
           }
 
-          // --- Logic 2: Color Picker Enhancement ---
-          const colorInputs = node.querySelectorAll('input[type="text"]');
-          colorInputs.forEach(input => {
-            const row = input.closest('tr');
-            if (row && row.textContent.includes('Guide Line Color')) {
-              if (row.querySelector('.block-space-color-swatch')) return;
+          // --- Logic 2: Robust Color Picker Injection ---
+          // Search for any element containing our specific label text
+          const labels = Array.from(node.querySelectorAll('label, span, div')).filter(el => 
+            el.textContent.trim() === 'Guide Line Color' && el.children.length === 0
+          );
 
-              const swatch = document.createElement('div');
-              swatch.className = 'block-space-color-swatch';
-              swatch.style.backgroundColor = input.value;
-              
-              const picker = document.createElement('input');
-              picker.type = 'color';
-              picker.style.display = 'none';
-              picker.value = input.value;
+          labels.forEach(label => {
+            // Find the container (usually a table row or a flex div)
+            const container = label.closest('tr, .comfy-setting-row, div');
+            if (!container) return;
 
-              swatch.onclick = () => picker.click();
-              picker.oninput = (e) => {
-                const color = e.target.value;
-                input.value = color;
-                swatch.style.backgroundColor = color;
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-                input.dispatchEvent(new Event('change', { bubbles: true }));
-              };
+            const input = container.querySelector('input[type="text"]');
+            if (!input || container.querySelector('.block-space-color-swatch')) return;
 
-              input.after(swatch);
-              input.after(picker);
-            }
+            const swatch = document.createElement('div');
+            swatch.className = 'block-space-color-swatch';
+            swatch.title = 'Click to open color picker';
+            swatch.style.backgroundColor = input.value;
+            
+            const picker = document.createElement('input');
+            picker.type = 'color';
+            picker.style.display = 'none';
+            picker.value = input.value;
+
+            swatch.onclick = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              picker.click();
+            };
+
+            picker.oninput = (e) => {
+              const color = e.target.value;
+              input.value = color;
+              swatch.style.backgroundColor = color;
+              // Trigger both events to ensure ComfyUI saves the change
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+            };
+
+            input.after(swatch);
+            input.after(picker);
           });
         }
       }
