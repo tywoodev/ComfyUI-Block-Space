@@ -453,10 +453,18 @@
     if (memory && memory.nodeId === activeNode.id) {
       return memory;
     }
-    var nodes = getGraphNodes(canvas);
+    
+    var allNodes = getGraphNodes(canvas);
+    
+    // --- IMPLEMENTING THE ADJACENCY FILTER ---
+    // Instead of using allNodes, we filter down to the "Green Box"
+    // We pass a 30px tolerance to allow for slightly misaligned nodes to still be recognized as neighbors.
+    var adjacentNodes = getImmediateNeighbors(activeNode, allNodes, 30);
+    
     var points = [];
-    for (var i = 0; i < nodes.length; i += 1) {
-      var node = nodes[i];
+    // Loop over adjacentNodes instead of allNodes
+    for (var i = 0; i < adjacentNodes.length; i += 1) {
+      var node = adjacentNodes[i];
       if (!node || node === activeNode || node.constructor === window.LGraphGroup) {
         continue;
       }
@@ -464,12 +472,13 @@
       if (!bounds) {
         continue;
       }
-      // Add all 4 horizontal alignment lines to the cluster pool
+      // Add alignment lines to the cluster pool
       points.push({ value: bounds.top, node: node, type: "top" });
       points.push({ value: bounds.bottom, node: node, type: "bottom" });
       points.push({ value: bounds.top - vSnapMargin, node: node, type: "top_minus_margin" });
       points.push({ value: bounds.bottom + vSnapMargin, node: node, type: "bottom_plus_margin" });
     }
+    
     memory = {
       nodeId: activeNode.id,
       tolerancePx: getDimensionTolerancePx(),
@@ -543,6 +552,84 @@
   function rangesOverlap(aMin, aMax, bMin, bMax, tolerance) {
     var tol = Number(tolerance) || 0;
     return Math.min(aMax, bMax) - Math.max(aMin, bMin) >= -tol;
+  }
+
+  function getImmediateNeighbors(activeNode, allNodes, tolerance) {
+    var activeBounds = getNodeBounds(activeNode);
+    if (!activeBounds) return allNodes;
+
+    var closestLeftNode = null, closestRightNode = null;
+    var closestTopNode = null, closestBottomNode = null;
+
+    var minLeftDist = Infinity, minRightDist = Infinity;
+    var minTopDist = Infinity, minBottomDist = Infinity;
+
+    // 1. Raycast to find the immediate neighbors on all 4 axes
+    for (var i = 0; i < allNodes.length; i++) {
+      var n = allNodes[i];
+      if (n === activeNode || n.constructor === window.LGraphGroup) continue;
+      var b = getNodeBounds(n);
+      if (!b) continue;
+
+      // X-Axis Raycast (Must overlap vertically)
+      if (rangesOverlap(activeBounds.top, activeBounds.bottom, b.top, b.bottom, tolerance)) {
+        if (b.centerX < activeBounds.centerX) { // Looking Left
+          var dist = activeBounds.left - b.right;
+          if (dist >= -tolerance && dist < minLeftDist) {
+            minLeftDist = dist;
+            closestLeftNode = b;
+          }
+        } else { // Looking Right
+          var dist = b.left - activeBounds.right;
+          if (dist >= -tolerance && dist < minRightDist) {
+            minRightDist = dist;
+            closestRightNode = b;
+          }
+        }
+      }
+
+      // Y-Axis Raycast (Must overlap horizontally)
+      if (rangesOverlap(activeBounds.left, activeBounds.right, b.left, b.right, tolerance)) {
+        if (b.centerY < activeBounds.centerY) { // Looking Up
+          var dist = activeBounds.top - b.bottom;
+          if (dist >= -tolerance && dist < minTopDist) {
+            minTopDist = dist;
+            closestTopNode = b;
+          }
+        } else { // Looking Down
+          var dist = b.top - activeBounds.bottom;
+          if (dist >= -tolerance && dist < minBottomDist) {
+            minBottomDist = dist;
+            closestBottomNode = b;
+          }
+        }
+      }
+    }
+
+    // 2. Define the Adjacency Envelope (The "Green Box")
+    // If a neighbor is found, we use its outer edge as a hard wall.
+    // If no neighbor is found, we set a reasonable max distance (e.g., 800px) so it doesn't search to infinity.
+    var maxGap = 800; 
+    var minAcceptableX = closestLeftNode ? closestLeftNode.left - tolerance : activeBounds.left - maxGap;
+    var maxAcceptableX = closestRightNode ? closestRightNode.right + tolerance : activeBounds.right + maxGap;
+    var minAcceptableY = closestTopNode ? closestTopNode.top - tolerance : activeBounds.top - maxGap;
+    var maxAcceptableY = closestBottomNode ? closestBottomNode.bottom + tolerance : activeBounds.bottom + maxGap;
+
+    // 3. Collect only the nodes that fall inside the Envelope
+    var neighbors = [];
+    for (var j = 0; j < allNodes.length; j++) {
+      var targetNode = allNodes[j];
+      if (targetNode === activeNode || targetNode.constructor === window.LGraphGroup) continue;
+      var targetBounds = getNodeBounds(targetNode);
+      if (!targetBounds) continue;
+
+      if (targetBounds.centerX >= minAcceptableX && targetBounds.centerX <= maxAcceptableX &&
+          targetBounds.centerY >= minAcceptableY && targetBounds.centerY <= maxAcceptableY) {
+        neighbors.push(targetNode);
+      }
+    }
+
+    return neighbors;
   }
 
   function collectValidTargetsForAxis(
