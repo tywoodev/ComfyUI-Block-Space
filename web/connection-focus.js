@@ -687,6 +687,11 @@
   }
 
   window.LGraphCanvas.prototype.renderLink = function (ctx, a, b) {
+    // If custom connectors are disabled, use original LiteGraph rendering
+    if (!getFocusSettings().enableAngled) {
+      return originalRenderLink.apply(this, arguments);
+    }
+
     var focus = getActiveFocus(this);
     if (!focus) {
       return drawHardAngleLink(arguments);
@@ -735,6 +740,11 @@
 
   if (typeof originalDrawNode === "function") {
     window.LGraphCanvas.prototype.drawNode = function (node, ctx) {
+      // If custom connectors are disabled, use original LiteGraph rendering
+      if (!getFocusSettings().enableAngled) {
+        return originalDrawNode.apply(this, arguments);
+      }
+
       var focus = getActiveFocus(this);
       if (!focus || !node) {
         return originalDrawNode.apply(this, arguments);
@@ -796,6 +806,11 @@
     var isLeft = isLeftPointer(event);
     var nodeBefore = isLeft ? getNodeAtEvent(this, event) : null;
     var result = originalProcessMouseDown.apply(this, arguments);
+
+    // Only set focus state if custom connectors are enabled
+    if (!getFocusSettings().enableAngled) {
+      return result;
+    }
 
     if (!isLeft) {
       clearFocusState();
