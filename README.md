@@ -4,61 +4,53 @@ A professional UX enhancement suite for ComfyUI. This extension transforms your 
 
 The goal: build, read, and maintain complex node graphs with pixel-perfect precision.
 
-## Key Features
+---
 
-### 1. Auto-Arrange & Harmonize
-Instantly transform messy node clusters into perfectly aligned blocks using our dedicated arrangement panel.
+## 1. High-Fidelity Snapping & Harmonizing
+Precision snapping that understands the visual geometry of your nodes. 
 
-![Arrangement Panel](assets/panel-preview.png)
-
-- **↕️ Stack:** Perfectly aligns your selection into a tight vertical column.
-- **↔️ Flow:** Organizes nodes into a clean horizontal row.
-- **💎 Harmonize:** Our flagship "Zen" layout. It intelligently detects columns, ensures every node in a column has the same width, and stretches nodes to create a perfectly flush, professional grid.
-
-![Harmonize Preview](assets/harmonize-preview.png)
-
-- **Floating Panel:** A sleek UI that appears automatically when multiple nodes are selected. You can drag it anywhere on your screen, and it will remember its position for your next session.
-- **Safe Editing:** Every arrangement action fully supports `Ctrl+Z` (Undo), so you can experiment with layouts worry-free.
-
-### 2. High-Fidelity Snapping
-Precision snapping that understands the visual geometry of your nodes.
-
-![Snapping Preview](assets/snapping-preview.png)
+![Snapping & Harmonizing](assets/snap-harmonize.gif)
 
 - **True Margins:** Snapping is 100% accurate to your settings, correctly accounting for node title bars so your gaps are always exactly the number of pixels you intended.
-- **Smart Alignment:** Effortlessly snap to edges, centers, or specific margins. The system "feels" where you want a node to go and locks it in place.
+- **Harmonize Action:** Instantly transform messy node clusters into perfectly aligned blocks. Our intelligent layout engine detects columns, enforces uniform widths, and balances heights for a professional, "boxed" look.
 - **Visual Guides:** Dotted alignment lines appear during drags and resizes to frame your nodes and show exactly which edges are being aligned.
 
-### 3. Visual Flow & Connection Focus
+## 2. Animated Flow Visualization
+Gain instant clarity on your data flow with high-visibility animations and port indicators.
 
-Gain instant clarity on your data flow with high-visibility animations.
+![Animated Connectors](assets/animated-connectors.gif)
 
-- **Port Color Matching:** Tracing a connection? The pulse animations and focus rings automatically match the color of the port (e.g., purple for CONDITIONING, yellow for CLIP), making it easy to follow paths in dense workflows.
-- **High-Contrast Tracing:** Animated white-dashed overlays ensure you can see your active connections clearly against any background.
-- **Custom Styles:** Choose between `Hybrid`, `Straight`, and `Angled` connector styles in the settings menu.
+- **Port Color Matching:** The pulse animations and connection rings automatically match the color of the port (e.g., purple for CONDITIONING, yellow for CLIP), making it easy to follow paths in dense workflows.
+- **Enhanced Stubs:** High-contrast rings (stubs) appear on active ports during focus, providing clear visual targets for easier tracing and connection management.
+- **White-Dashed Overlays:** Animated overlays ensure you can see your active connections clearly against any background or node color.
 
-### 4. Smart Port Connection (Body Drop)
+## 3. Custom Connector Types
+Choose the aesthetic that best fits your workflow and reduces visual noise.
 
-Build workflows faster by removing the need for surgical mouse precision.
+![Connector Types](assets/connector-types.gif)
 
-- **Body Drop:** Drag a wire from an output and drop it anywhere on a node's body—not just the tiny input port.
-- **Type Awareness:** The extension automatically connects to the correct matching input.
-- **Quick Chooser:** If a node has multiple matching inputs, a small menu appears at your cursor so you can pick the right one without moving your mouse back and forth.
+- **Hybrid Style:** The best of both worlds. Features elegant curves for short hops and straight lines for longer runs, maintaining a clean yet organic look.
+- **Straight Style:** Minimalist and direct. Perfect for high-density workflows where reducing overlapping curves is a priority.
+- **Angled Style:** A technical, "circuit-board" aesthetic that creates very clear horizontal and vertical pathways, ideal for highly structured layouts.
 
-### 5. Intelligent Node Sizing
+## 4. Shift to Bypass Snapping
+Handle intricate positioning with ease without fighting the alignment engine.
 
-Maintains a clean workspace by managing node dimensions automatically.
+![Shift to Bypass](assets/shift-to-bypass.gif)
 
-- **Content-Aware Bounds:** Prevents nodes from being resized too small for their contents.
-- **Label Truncation:** Cleanly truncates overly long text labels to prevent visual clutter and keep your graph readable.
+- **Micro-Adjustments:** Hold the **Shift** key while dragging or resizing to temporarily disable snapping. This allows for pixel-perfect placement in tight spaces where you need a node to sit between standard grid points.
+- **Total Control:** Bypass gives you the freedom to handle unique edge cases without needing to toggle snapping off in the settings menu.
 
-## Settings
+## 5. Professional Settings Panel
+Customize your experience with an intuitive, branded interface.
 
-Customize your experience via **ComfyUI Settings** → **Block Space**. Our custom menu includes:
+![Settings](assets/settings.gif)
 
-- **Branded Icons** for easy navigation.
-- **Helpful Tooltips:** Hover over any setting name for a plain-English explanation of what it does.
-- **Instant Previews:** Most settings apply immediately without requiring you to refresh your browser.
+- **Branded Icons:** Category-specific SVG branding makes navigation fast and intuitive.
+- **Informative Tooltips:** Hover over any setting name for a detailed explanation of its behavior.
+- **Real-Time Updates:** Most settings apply immediately, allowing you to fine-tune your margins and colors without refreshing your browser.
+
+---
 
 ## Installation
 
@@ -67,14 +59,7 @@ cd ComfyUI/custom_nodes
 git clone https://github.com/tywoodev/comfy-ui-better-nodes.git comfyui-block-space
 ```
 
-Restart ComfyUI. The extension will auto-load and inject the tools and settings panel.
-
-## Recent Updates
-
-- **New Arrangement Panel:** Floating, draggable tool for cleaning up messy selections.
-- **Harmonize Mode:** Creates "boxed" grid layouts with uniform column widths.
-- **Geometry Fixes:** All snapping now perfectly accounts for node title bar heights.
-- **Enhanced Snapping:** Restored and improved horizontal snapping logic for better side-by-side node placement.
+Restart ComfyUI. The extension will auto-load and inject the arrangement tools, snapping engine, and settings panel.
 
 ## License
 
