@@ -198,14 +198,21 @@
     var left = Number(node.pos[0]) || 0;
     var top = Number(node.pos[1]) || 0;
     var width = Math.max(0, Number(node.size[0]) || 0);
-    var height = Math.max(0, Number(node.size[1]) || 0);
+    var contentHeight = Math.max(0, Number(node.size[1]) || 0);
+    
+    // LiteGraph.NODE_TITLE_HEIGHT is usually 24px. 
+    // node.pos[1] is the top of the title bar. 
+    // node.size[1] is the height of the content area only.
+    var titleH = Number(window.LiteGraph && window.LiteGraph.NODE_TITLE_HEIGHT) || 24;
+    var totalHeight = contentHeight + titleH;
+
     return {
       left: left,
       right: left + width,
       top: top,
-      bottom: top + height,
+      bottom: top + totalHeight,
       centerX: left + width * 0.5,
-      centerY: top + height * 0.5,
+      centerY: top + (totalHeight * 0.5),
     };
   }
 
@@ -2047,8 +2054,9 @@
 
     var hSnapMargin = getHSnapMargin();
     var vSnapMargin = getVSnapMargin();
-    var xSearchDistance = hSnapMargin * 2;
-    var ySearchDistance = vSnapMargin * 2;
+    // Search just slightly beyond the margin to allow the snap to "catch"
+    var xSearchDistance = hSnapMargin + 10;
+    var ySearchDistance = vSnapMargin + 10;
     var baseMoveThreshold =
       SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(this));
     var exitThresholdCanvas = baseMoveThreshold * EXIT_THRESHOLD_MULTIPLIER;
