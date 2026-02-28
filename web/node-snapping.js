@@ -11,7 +11,7 @@
   var SNAP_THRESHOLD = 10;
   var EXIT_THRESHOLD_MULTIPLIER = 1.5; // 10px to enter, 15px to exit
   var DEFAULT_H_SNAP_MARGIN = 60;
-  var DEFAULT_V_SNAP_MARGIN = 60;
+  var DEFAULT_V_SNAP_MARGIN = 100;
   var DEFAULT_MOVE_SNAP_STRENGTH = 1.0;
   var DEFAULT_MOVE_Y_SNAP_STRENGTH = 2.4;
   var DEFAULT_RESIZE_SNAP_STRENGTH = 1.8;
@@ -23,7 +23,6 @@
   var DEFAULT_FEEDBACK_COLOR_X = "#1a3a6b";
   var DEFAULT_FEEDBACK_COLOR_Y = "#b57cff";
   var DEFAULT_FEEDBACK_COLOR_XY = "#1a6b35";
-  var V_SNAP_MARGIN_VISUAL_MULTIPLIER = 1.75;
   var WINNER_HIGHLIGHT_BG_FALLBACK = "#3a3f47";
   var DEBUG_RESIZE_SNAPPING = false;
   var RESIZE_SEARCH_DISTANCE_MULTIPLIER = 4;
@@ -92,13 +91,12 @@
   }
 
   function getVSnapMargin() {
-    var base = clampNumber(
+    return clampNumber(
       getSettingValue("BlockSpace.Snap.VMarginPx", DEFAULT_V_SNAP_MARGIN),
       0,
       500,
       DEFAULT_V_SNAP_MARGIN
     );
-    return clampNumber(base * V_SNAP_MARGIN_VISUAL_MULTIPLIER, 0, 1000, DEFAULT_V_SNAP_MARGIN);
   }
 
   function getSnapThreshold() {
