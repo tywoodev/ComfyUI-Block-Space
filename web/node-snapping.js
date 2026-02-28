@@ -1949,27 +1949,8 @@
   }
 
   function positionSnapBadge(canvas, badge) {
-    if (!canvas || !badge || !badge.node || !badge.el) {
-      return;
-    }
-    var cursorX = Number(canvas.__blockSpaceCursorX);
-    var cursorY = Number(canvas.__blockSpaceCursorY);
-    var client = null;
-    if (isFinite(cursorX) && isFinite(cursorY)) {
-      client = graphToClient(canvas, cursorX + 10, cursorY - 14);
-    }
-    if (!client) {
-      var bounds = getNodeBounds(badge.node);
-      if (!bounds) {
-        return;
-      }
-      client = graphToClient(canvas, bounds.right - 6, bounds.top + 4);
-    }
-    if (!client) {
-      return;
-    }
-    badge.el.style.left = Math.round(client.x) + "px";
-    badge.el.style.top = Math.round(client.y) + "px";
+    // Badge functionality removed
+    return;
   }
 
   function triggerSnapFeedback(canvas, node, xDidSnap, yDidSnap, showBadge) {
@@ -2007,41 +1988,8 @@
     pulse.color = payload.color;
     node.boxcolor = payload.color;
 
-    var badgeKey = nodeId + ":" + payload.axisLabel;
-    var cooldownMs = getFeedbackBadgeCooldownMs();
-    var lastAt = Number(state.badgeLastAtByKey[badgeKey]) || 0;
-    if ((showBadge !== false) && now - lastAt >= cooldownMs) {
-      state.badgeLastAtByKey[badgeKey] = now;
-      var badgeMs = getFeedbackBadgeMs();
-      var layer = ensureSnapBadgeLayer();
-      var badge = state.badgeSingleton;
-      if (!badge || !badge.el || !badge.el.isConnected) {
-        var el = createSnapBadgeElement(payload.axisLabel);
-        layer.appendChild(el);
-        badge = {
-          node: node,
-          el: el,
-          expiresAt: now + badgeMs,
-        };
-        state.badgeSingleton = badge;
-      } else {
-        badge.node = node;
-        badge.expiresAt = now + badgeMs;
-      }
-      badge.el.textContent = "SNAP " + payload.axisLabel;
-      badge.el.style.background = payload.color;
-      badge.el.style.color = getFeedbackBadgeTextColor();
-      badge.el.style.opacity = "0";
-      badge.el.style.transform = "translate3d(0,-4px,0)";
-      positionSnapBadge(canvas, badge);
-      requestAnimationFrame(function () {
-        if (!badge.el || !badge.el.isConnected) {
-          return;
-        }
-        badge.el.style.opacity = "1";
-        badge.el.style.transform = "translate3d(0,0,0)";
-      });
-    }
+    // Badge creation logic removed
+    
     canvas.dirty_canvas = true;
     canvas.dirty_bgcanvas = true;
   }
