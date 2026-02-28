@@ -21,6 +21,14 @@ sdist/
 var/
 wheels/
 share/python-wheels/
+ref/
+agents.md
+memory.md
+claude.md
+skills.md
+codex.md
+kimi.md
+agent.md
 *.egg-info/
 .installed.cfg
 *.egg
