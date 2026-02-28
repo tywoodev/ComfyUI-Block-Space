@@ -71,14 +71,14 @@ function registerBlockSpaceSettings() {
 
   // --- Section: Snapping ---
   addSetting({
-    id: "comfyuiBlockSpace.nodeSnap.enabled",
+    id: "BlockSpace.Snap.Enabled",
     name: "Enable Snapping",
     type: "boolean",
     defaultValue: true,
   });
 
   addSetting({
-    id: "comfyuiBlockSpace.nodeSnap.sensitivity",
+    id: "BlockSpace.Snap.Sensitivity",
     name: "Snap Sensitivity (px)",
     type: "slider",
     attrs: { min: 4, max: 30, step: 1 },
@@ -86,7 +86,7 @@ function registerBlockSpaceSettings() {
   });
 
   addSetting({
-    id: "comfyuiBlockSpace.nodeSnap.hMarginPx",
+    id: "BlockSpace.Snap.HMarginPx",
     name: "Horizontal Snap Margin",
     type: "slider",
     attrs: { min: 0, max: 200, step: 2 },
@@ -94,7 +94,7 @@ function registerBlockSpaceSettings() {
   });
 
   addSetting({
-    id: "comfyuiBlockSpace.nodeSnap.vMarginPx",
+    id: "BlockSpace.Snap.VMarginPx",
     name: "Vertical Snap Margin",
     type: "slider",
     attrs: { min: 0, max: 200, step: 2 },
@@ -102,7 +102,7 @@ function registerBlockSpaceSettings() {
   });
 
   addSetting({
-    id: "comfyuiBlockSpace.nodeSnap.highlightEnabled",
+    id: "BlockSpace.Snap.HighlightEnabled",
     name: "Show Alignment Guides",
     type: "boolean",
     defaultValue: true,
@@ -110,7 +110,7 @@ function registerBlockSpaceSettings() {
 
   // --- Section: Visuals ---
   addSetting({
-    id: "comfyuiBlockSpace.nodeSnap.feedbackPulseMs",
+    id: "BlockSpace.Snap.FeedbackPulseMs",
     name: "Snap Pulse Duration (ms)",
     type: "slider",
     attrs: { min: 0, max: 1000, step: 20 },
@@ -118,7 +118,7 @@ function registerBlockSpaceSettings() {
   });
 
   addSetting({
-    id: "comfyuiBlockSpace.nodeSnap.highlightColor",
+    id: "BlockSpace.Snap.HighlightColor",
     name: "Guide Line Color",
     type: "text",
     defaultValue: "#1a3a6b",

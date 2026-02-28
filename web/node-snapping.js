@@ -74,7 +74,7 @@
 
   function getHSnapMargin() {
     return clampNumber(
-      getSettingValue("comfyuiBlockSpace.nodeSnap.hMarginPx", DEFAULT_H_SNAP_MARGIN),
+      getSettingValue("BlockSpace.Snap.HMarginPx", DEFAULT_H_SNAP_MARGIN),
       0,
       500,
       DEFAULT_H_SNAP_MARGIN
@@ -83,7 +83,7 @@
 
   function getVSnapMargin() {
     var base = clampNumber(
-      getSettingValue("comfyuiBlockSpace.nodeSnap.vMarginPx", DEFAULT_V_SNAP_MARGIN),
+      getSettingValue("BlockSpace.Snap.VMarginPx", DEFAULT_V_SNAP_MARGIN),
       0,
       500,
       DEFAULT_V_SNAP_MARGIN
@@ -93,7 +93,7 @@
 
   function getSnapThreshold() {
     return clampNumber(
-      getSettingValue("comfyuiBlockSpace.nodeSnap.sensitivity", SNAP_THRESHOLD),
+      getSettingValue("BlockSpace.Snap.Sensitivity", SNAP_THRESHOLD),
       2,
       50,
       SNAP_THRESHOLD
@@ -101,12 +101,12 @@
   }
 
   function isSnappingEnabled() {
-    return !!getSettingValue("comfyuiBlockSpace.nodeSnap.enabled", true);
+    return !!getSettingValue("BlockSpace.Snap.Enabled", true);
   }
 
   function getMoveSnapStrength() {
     return clampNumber(
-      getSettingValue("comfyuiBlockSpace.nodeSnap.moveStrength", DEFAULT_MOVE_SNAP_STRENGTH),
+      getSettingValue("BlockSpace.Snap.MoveStrength", DEFAULT_MOVE_SNAP_STRENGTH),
       0.1,
       5,
       DEFAULT_MOVE_SNAP_STRENGTH
@@ -115,7 +115,7 @@
 
   function getResizeSnapStrength() {
     return clampNumber(
-      getSettingValue("comfyuiBlockSpace.nodeSnap.resizeStrength", DEFAULT_RESIZE_SNAP_STRENGTH),
+      getSettingValue("BlockSpace.Snap.ResizeStrength", DEFAULT_RESIZE_SNAP_STRENGTH),
       0.1,
       5,
       DEFAULT_RESIZE_SNAP_STRENGTH
@@ -125,8 +125,8 @@
   function getMoveYSnapStrength() {
     return clampNumber(
       getSettingValue(
-        "comfyuiBlockSpace.nodeSnap.moveYSnapStrength",
-        getSettingValue("comfyuiBlockSpace.nodeSnap.moveStrength", DEFAULT_MOVE_Y_SNAP_STRENGTH)
+        "BlockSpace.Snap.MoveYSnapStrength",
+        getSettingValue("BlockSpace.Snap.MoveStrength", DEFAULT_MOVE_Y_SNAP_STRENGTH)
       ),
       0.1,
       8,
@@ -136,7 +136,7 @@
 
   function getDimensionTolerancePx() {
     return clampNumber(
-      getSettingValue("comfyuiBlockSpace.nodeSnap.dimensionTolerancePx", DEFAULT_DIMENSION_TOLERANCE_PX),
+      getSettingValue("BlockSpace.Snap.DimensionTolerancePx", DEFAULT_DIMENSION_TOLERANCE_PX),
       1,
       64,
       DEFAULT_DIMENSION_TOLERANCE_PX
@@ -144,21 +144,21 @@
   }
 
   function getHighlightEnabled() {
-    return !!getSettingValue("comfyuiBlockSpace.nodeSnap.highlightEnabled", DEFAULT_HIGHLIGHT_ENABLED);
+    return !!getSettingValue("BlockSpace.Snap.HighlightEnabled", DEFAULT_HIGHLIGHT_ENABLED);
   }
 
   function getHighlightColor() {
-    var value = getSettingValue("comfyuiBlockSpace.nodeSnap.highlightColor", DEFAULT_HIGHLIGHT_COLOR);
+    var value = getSettingValue("BlockSpace.Snap.HighlightColor", DEFAULT_HIGHLIGHT_COLOR);
     return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_HIGHLIGHT_COLOR;
   }
 
   function getFeedbackEnabled() {
-    return !!getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackEnabled", DEFAULT_FEEDBACK_ENABLED);
+    return !!getSettingValue("BlockSpace.Snap.FeedbackEnabled", DEFAULT_FEEDBACK_ENABLED);
   }
 
   function getFeedbackPulseMs() {
     return clampNumber(
-      getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackPulseMs", DEFAULT_FEEDBACK_PULSE_MS),
+      getSettingValue("BlockSpace.Snap.FeedbackPulseMs", DEFAULT_FEEDBACK_PULSE_MS),
       60,
       3000,
       DEFAULT_FEEDBACK_PULSE_MS
@@ -166,17 +166,17 @@
   }
 
   function getFeedbackColorX() {
-    var value = getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorX", DEFAULT_FEEDBACK_COLOR_X);
+    var value = getSettingValue("BlockSpace.Snap.FeedbackColorX", DEFAULT_FEEDBACK_COLOR_X);
     return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_COLOR_X;
   }
 
   function getFeedbackColorY() {
-    var value = getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorY", DEFAULT_FEEDBACK_COLOR_Y);
+    var value = getSettingValue("BlockSpace.Snap.FeedbackColorY", DEFAULT_FEEDBACK_COLOR_Y);
     return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_COLOR_Y;
   }
 
   function getFeedbackColorXY() {
-    var value = getSettingValue("comfyuiBlockSpace.nodeSnap.feedbackColorXY", DEFAULT_FEEDBACK_COLOR_XY);
+    var value = getSettingValue("BlockSpace.Snap.FeedbackColorXY", DEFAULT_FEEDBACK_COLOR_XY);
     return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_COLOR_XY;
   }
 
