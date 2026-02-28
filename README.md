@@ -1,73 +1,111 @@
-# ComfyUI Better Nodes (Prototype)
+# ComfyUI Block Space (Better Nodes)
 
-ComfyUI Better Nodes is a frontend UX prototype that upgrades default LiteGraph-style node interactions with faster wiring, clearer visual tracing, smarter sizing, and structured layout tools.  
-The goal is simple: make complex ComfyUI-style graphs easier to build, read, and maintain.
+A frontend UX enhancement suite for ComfyUI and LiteGraph-based node editors. Upgrades default node interactions with smarter wiring, clearer visual tracing, intelligent sizing, and structured layout tools.
 
-## Why this improves default behavior
+The goal: make complex node graphs easier to build, read, and maintain.
 
-| Built-in friction | Better Nodes improvement |
-|---|---|
-| You usually need precise port targeting to connect nodes. | **Smart Drop** lets you drop on node body and auto-connects by compatible type. |
-| Dense graphs are hard to trace visually. | **Connection Focus** dims unrelated nodes/links and highlights active flow paths. |
-| Node labels/widgets can break layout or require manual cleanup. | **Smart Sizing** enforces text clamps while allowing large widgets to define true minimum size. |
-| Groups are mostly freeform and can become messy. | **SmartGrid** adds row/column structure, stacking, divider resizing, and alignment snapping. |
-| Layout state can be lost between refreshes. | **Workspace persistence** auto-saves and restores graph state from local storage. |
+## Dual-Mode Architecture
 
-## Core features
+Block Space supports two deployment modes:
 
-- **Smart Drop (`smart-drop.js`)**
-  - Drag from output to node body, not only exact input port.
-  - Type-aware auto-connect with ambiguity chooser when multiple inputs match.
+1. **Standalone Sandbox Mode** - For rapid prototyping and development outside of ComfyUI
+2. **ComfyUI Extension Mode** - Live integration as a ComfyUI custom node
 
-- **Connection Focus (`connection-focus.js`)**
-  - Mouse-hold focus mode with animated link pulse and slot rings.
-  - Connector styles: `Hybrid`, `Straight`, `Angled`.
-  - Fan-offset rendering for overlapping focused links.
+## Core Features
 
-- **Smart Sizing (`smart-sizing.js`)**
-  - Enforces minimum node bounds from content.
-  - Truncates overly long text labels cleanly.
-  - Preserves uncapped custom widget sizing behavior.
+### 1. Smart Drop (`smart-drop.js`)
+- Drag from output to node body (not just exact input port)
+- Type-aware auto-connection
+- Ambiguity chooser when multiple inputs match
 
-- **SmartGrid Container (`smart-grid-container.js`)**
-  - Row/column dashboards, draggable splitters, docked node stacks.
-  - Collapse/restore groups with stable internal ownership (dock-only children).
-  - Edge alignment guides + snapping for drag/resize, with configurable edge-gap.
+### 2. Connection Focus (`connection-focus.js`)
+- Mouse-hold focus mode with animated link pulse and slot rings
+- **Port color matching** - Animation color matches connected port colors
+- Connector styles: `Hybrid`, `Straight`, `Angled`
+- Configurable via settings panel
 
-- **Persistence (`app.js`)**
-  - Autosave/restore via `localStorage`.
-  - HUD button to reset workspace quickly.
+### 3. Smart Sizing (`smart-sizing.js`)
+- Enforces minimum node bounds from content
+- Truncates overly long text labels cleanly
+- Preserves uncapped custom widget sizing behavior
 
-## HUD controls (live)
+### 4. Node Snapping (`node-snapping.js`)
+- Edge alignment guides during drag and resize
+- Configurable margin and snap strength
+- Visual feedback with badges and pulses
 
-- Flow color, connector style
-- Grid/top/bottom padding
-- Node gap, border gap
-- Divider width/color/style
-- Edge snap gap
-- Reset Workspace
+### 5. SmartGrid Container (`smart-grid-container.js`) - **Sandbox Only**
+- Row/column dashboards with draggable splitters
+- Docked node stacks with collapse/restore
+- Available in standalone sandbox mode only
 
-## Quick start
+## Settings (ComfyUI Extension)
+
+Access settings via **ComfyUI Settings** → **Block Space**:
+
+- **Enable Custom Connectors** - Toggle custom connector rendering on/off
+- **Connector Style** - Choose between Hybrid, Straight, or Angled connector styles
+
+Changes apply immediately without needing to refresh.
+
+## Installation
+
+### ComfyUI Extension Mode
+
+```bash
+cd ComfyUI/custom_nodes
+git clone <repository-url> comfyui-block-space
+```
+
+Restart ComfyUI. The extension auto-loads and adds the "Block Space" settings panel.
+
+### Standalone Sandbox Mode (Development)
 
 ```bash
 python -m http.server 8000
 ```
 
-Open: `http://localhost:8000`
+Open: `http://localhost:8000/web/test.html`
 
-If loading directly from file works in your browser, you can also open `index.html`.
+## Project Structure
 
-## Project layout
+```
+ComfyUI-Block-Space/
+├── web/
+│   ├── extensions/comfyui-block-space/index.js  # ComfyUI extension bridge
+│   ├── smart-drop.js                            # Type-aware auto-connect
+│   ├── connection-focus.js                      # Visual flow highlighting
+│   ├── smart-sizing.js                          # Node bounds enforcement
+│   ├── node-snapping.js                         # Edge alignment guides
+│   ├── smart-grid-container.js                  # Sandbox: Row/column layouts
+│   └── test.html                                # Sandbox entry point
+├── docs/                                        # Documentation
+├── __init__.py                                  # Python entry point
+└── README.md                                    # This file
+```
 
-- `index.html` — canvas + debug HUD
-- `bootstrap.js` — LiteGraph/CDN boot and patch loading
-- `smart-drop.js` — body-drop type-aware connect behavior
-- `connection-focus.js` — focus visuals and connector rendering
-- `smart-sizing.js` — node sizing overrides
-- `smart-grid-container.js` — SmartGrid layout/container behavior
-- `app.js` — demo nodes, graph init, autosave/restore
+## Development
 
-## Current scope and limitations
+### Key Files
 
-- This repo is a standalone prototype, not a packaged ComfyUI extension installer.
-- Validation is currently manual (no automated test suite yet).
+- `web/extensions/comfyui-block-space/index.js` - ComfyUI extension registration
+- `web/connection-focus.js` - Connector rendering and focus effects
+- `web/node-snapping.js` - Drag/resize snapping logic
+- `web/smart-drop.js` - Body-drop connection logic
+
+### Testing
+
+- **No automated tests** currently
+- Manual verification via Sandbox mode (`test.html`)
+- Or install in ComfyUI and test with real workflows
+
+## Recent Changes
+
+- Simplified settings to toggle + style dropdown
+- Added port color matching for connector animations
+- Fixed vertical margin calculation in resize snapping
+- SmartGrid moved to sandbox-only (removed from ComfyUI extension)
+
+## License
+
+[Your License Here]
