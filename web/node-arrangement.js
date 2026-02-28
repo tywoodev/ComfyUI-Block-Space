@@ -19,6 +19,8 @@
       right: left + width,
       top: top,
       bottom: top + contentHeight + titleH,
+      width: width,
+      height: contentHeight + titleH
     };
   }
 
@@ -33,7 +35,7 @@
 
   // --- Arrangement Actions ---
 
-  function arrangeSelection(canvas, axis) {
+  function arrangeSelection(canvas, mode) {
     var selected = canvas.selected_nodes;
     if (!selected) return;
     
@@ -45,32 +47,62 @@
 
     var settings = getSettings();
 
-    // 1. Anchor Rule: Top-leftmost node stays static
+    // 1. Initial Sort to define the Anchor and Order
+    // Sort by Y primarily, then X.
     nodes.sort(function(a, b) {
-      if (a.pos[1] !== b.pos[1]) return a.pos[1] - b.pos[1];
+      if (Math.abs(a.pos[1] - b.pos[1]) > 5) return a.pos[1] - b.pos[1];
       return a.pos[0] - b.pos[0];
     });
     var anchor = nodes[0];
+    var startX = anchor.pos[0];
+    var startY = anchor.pos[1];
 
-    // 2. Sorting Heuristic for the axis
-    if (axis === "y") {
-      nodes.sort(function(a, b) { return a.pos[1] - b.pos[1]; });
+    if (mode === "grid") {
+      var numCols = Math.ceil(Math.sqrt(nodes.length));
+      var colWidths = [];
+      var rowHeights = [];
+
+      // Pass 1: Determine Max Widths/Heights for each cell in the grid
+      for (var i = 0; i < nodes.length; i++) {
+        var col = i % numCols;
+        var row = Math.floor(i / numCols);
+        var b = getNodeBounds(nodes[i]);
+        if (!b) continue;
+
+        if (colWidths[col] === undefined || b.width > colWidths[col]) colWidths[col] = b.width;
+        if (rowHeights[row] === undefined || b.height > rowHeights[row]) rowHeights[row] = b.height;
+      }
+
+      // Pass 2: Apply positions
+      var yOffset = startY;
+      for (var r = 0; r < rowHeights.length; r++) {
+        var xOffset = startX;
+        for (var c = 0; c < numCols; c++) {
+          var idx = r * numCols + c;
+          if (idx >= nodes.length) break;
+
+          var node = nodes[idx];
+          node.pos[0] = xOffset;
+          node.pos[1] = yOffset;
+
+          xOffset += colWidths[c] + settings.hMargin;
+        }
+        yOffset += rowHeights[r] + settings.vMargin;
+      }
     } else {
-      nodes.sort(function(a, b) { return a.pos[0] - b.pos[0]; });
-    }
+      // Original Stack/Flow logic
+      for (var i = 1; i < nodes.length; i++) {
+        var prev = nodes[i - 1];
+        var node = nodes[i];
+        var prevBounds = getNodeBounds(prev);
 
-    // 3. Spacing Logic
-    for (var i = 1; i < nodes.length; i++) {
-      var prev = nodes[i - 1];
-      var node = nodes[i];
-      var prevBounds = getNodeBounds(prev);
-
-      if (axis === "y") {
-        node.pos[0] = anchor.pos[0];
-        node.pos[1] = prevBounds.bottom + settings.vMargin;
-      } else {
-        node.pos[1] = anchor.pos[1];
-        node.pos[0] = prevBounds.right + settings.hMargin;
+        if (mode === "y") {
+          node.pos[0] = anchor.pos[0];
+          node.pos[1] = prevBounds.bottom + settings.vMargin;
+        } else {
+          node.pos[1] = anchor.pos[1];
+          node.pos[0] = prevBounds.right + settings.hMargin;
+        }
       }
     }
 
@@ -97,7 +129,7 @@
     panel.style.padding = "8px 12px";
     panel.style.display = "none";
     panel.style.flexDirection = "row";
-    panel.style.gap = "12px";
+    panel.style.gap = "10px";
     panel.style.alignItems = "center";
     panel.style.boxShadow = "0 4px 15px rgba(0,0,0,0.5)";
     panel.style.zIndex = "10000";
@@ -107,9 +139,10 @@
     var label = document.createElement("span");
     label.innerText = "📐 Block Space";
     label.style.color = "#888";
-    label.style.fontSize = "12px";
+    label.style.fontSize = "11px";
     label.style.fontWeight = "bold";
-    label.style.marginRight = "4px";
+    label.style.marginRight = "6px";
+    label.style.whiteSpace = "nowrap";
     panel.appendChild(label);
 
     var createBtn = function(text, icon, callback) {
@@ -119,15 +152,21 @@
       btn.style.color = "#eee";
       btn.style.border = "1px solid #555";
       btn.style.borderRadius = "4px";
-      btn.style.padding = "6px 10px";
+      btn.style.padding = "6px 12px";
       btn.style.cursor = "pointer";
       btn.style.fontSize = "12px";
       btn.style.display = "flex";
       btn.style.alignItems = "center";
-      btn.style.transition = "background-color 0.1s";
+      btn.style.transition = "background-color 0.1s, border-color 0.1s";
       
-      btn.onmouseenter = function() { btn.style.backgroundColor = "#444"; };
-      btn.onmouseleave = function() { btn.style.backgroundColor = "#333"; };
+      btn.onmouseenter = function() { 
+        btn.style.backgroundColor = "#444"; 
+        btn.style.borderColor = "#777";
+      };
+      btn.onmouseleave = function() { 
+        btn.style.backgroundColor = "#333"; 
+        btn.style.borderColor = "#555";
+      };
       btn.onclick = callback;
       
       return btn;
@@ -139,6 +178,10 @@
 
     panel.appendChild(createBtn("Flow", "↔️", function() {
       if (window.app && window.app.canvas) arrangeSelection(window.app.canvas, "x");
+    }));
+
+    panel.appendChild(createBtn("Grid", "⊞", function() {
+      if (window.app && window.app.canvas) arrangeSelection(window.app.canvas, "grid");
     }));
 
     document.body.appendChild(panel);
@@ -176,8 +219,8 @@
     }
   }
 
-  // Poll for selection changes (standard ComfyUI extension pattern)
+  // Poll for selection changes
   setInterval(updatePanelVisibility, 200);
 
-  console.log("[BlockSpace] Floating Arrangement Panel loaded.");
+  console.log("[BlockSpace] Arrangement Panel with Grid support loaded.");
 })();
