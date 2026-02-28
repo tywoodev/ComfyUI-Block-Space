@@ -60,9 +60,6 @@
     }
 
     // 3. Spacing Logic
-    var currentX = anchor.pos[0];
-    var currentY = anchor.pos[1];
-
     for (var i = 1; i < nodes.length; i++) {
       var prev = nodes[i - 1];
       var node = nodes[i];
@@ -81,38 +78,106 @@
     canvas.dirty_bgcanvas = true;
   }
 
-  // --- Context Menu Hook ---
+  // --- Floating Panel UI ---
 
-  var originalGetCanvasMenuOptions = window.LGraphCanvas.prototype.getCanvasMenuOptions;
-  window.LGraphCanvas.prototype.getCanvasMenuOptions = function () {
-    var options = originalGetCanvasMenuOptions.apply(this, arguments);
-    
-    // Only show if multiple nodes are selected
-    var selectedCount = this.selected_nodes ? Object.keys(this.selected_nodes).length : 0;
-    
-    if (selectedCount > 1) {
-      options.push(null); // Separator
-      options.push({
-        content: "📐 Block Space",
-        has_submenu: true,
-        callback: function() {}, // No-op for parent item
-        submenu: {
-          options: [
-            {
-              content: "Stack Vertically",
-              callback: function() { arrangeSelection(this, "y"); }.bind(this)
-            },
-            {
-              content: "Flow Horizontally",
-              callback: function() { arrangeSelection(this, "x"); }.bind(this)
-            }
-          ]
-        }
-      });
+  var panel = null;
+
+  function createPanel() {
+    if (panel) return panel;
+
+    panel = document.createElement("div");
+    panel.id = "block-space-arrangement-panel";
+    panel.style.position = "fixed";
+    panel.style.top = "20px";
+    panel.style.left = "50%";
+    panel.style.transform = "translateX(-50%)";
+    panel.style.backgroundColor = "rgba(30, 30, 30, 0.95)";
+    panel.style.border = "1px solid #444";
+    panel.style.borderRadius = "8px";
+    panel.style.padding = "8px 12px";
+    panel.style.display = "none";
+    panel.style.flexDirection = "row";
+    panel.style.gap = "12px";
+    panel.style.alignItems = "center";
+    panel.style.boxShadow = "0 4px 15px rgba(0,0,0,0.5)";
+    panel.style.zIndex = "10000";
+    panel.style.transition = "opacity 0.2s ease, transform 0.2s ease";
+    panel.style.pointerEvents = "auto";
+
+    var label = document.createElement("span");
+    label.innerText = "📐 Block Space";
+    label.style.color = "#888";
+    label.style.fontSize = "12px";
+    label.style.fontWeight = "bold";
+    label.style.marginRight = "4px";
+    panel.appendChild(label);
+
+    var createBtn = function(text, icon, callback) {
+      var btn = document.createElement("button");
+      btn.innerHTML = `<span style="margin-right:6px">${icon}</span>${text}`;
+      btn.style.backgroundColor = "#333";
+      btn.style.color = "#eee";
+      btn.style.border = "1px solid #555";
+      btn.style.borderRadius = "4px";
+      btn.style.padding = "6px 10px";
+      btn.style.cursor = "pointer";
+      btn.style.fontSize = "12px";
+      btn.style.display = "flex";
+      btn.style.alignItems = "center";
+      btn.style.transition = "background-color 0.1s";
+      
+      btn.onmouseenter = function() { btn.style.backgroundColor = "#444"; };
+      btn.onmouseleave = function() { btn.style.backgroundColor = "#333"; };
+      btn.onclick = callback;
+      
+      return btn;
+    };
+
+    panel.appendChild(createBtn("Stack", "↕️", function() {
+      if (window.app && window.app.canvas) arrangeSelection(window.app.canvas, "y");
+    }));
+
+    panel.appendChild(createBtn("Flow", "↔️", function() {
+      if (window.app && window.app.canvas) arrangeSelection(window.app.canvas, "x");
+    }));
+
+    document.body.appendChild(panel);
+    return panel;
+  }
+
+  function updatePanelVisibility() {
+    var canvas = window.app && window.app.canvas;
+    if (!canvas) return;
+
+    var selectedCount = 0;
+    if (canvas.selected_nodes) {
+      selectedCount = Object.keys(canvas.selected_nodes).length;
     }
 
-    return options;
-  };
+    var p = createPanel();
+    if (selectedCount > 1) {
+      if (p.style.display === "none") {
+        p.style.display = "flex";
+        p.style.opacity = "0";
+        p.style.transform = "translateX(-50%) translateY(-10px)";
+        setTimeout(function() {
+          p.style.opacity = "1";
+          p.style.transform = "translateX(-50%) translateY(0)";
+        }, 10);
+      }
+    } else {
+      if (p.style.display === "flex") {
+        p.style.opacity = "0";
+        p.style.transform = "translateX(-50%) translateY(-10px)";
+        setTimeout(function() {
+          p.style.display = "none";
+        }, 200);
+      }
+    }
+  }
 
-  console.log("[BlockSpace] Node Arrangement loaded.");
+  // Poll for selection changes (standard ComfyUI extension pattern)
+  setInterval(updatePanelVisibility, 200);
+
+  console.log("[BlockSpace] Floating Arrangement Panel loaded.");
 })();
