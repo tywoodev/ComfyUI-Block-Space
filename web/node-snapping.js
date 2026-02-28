@@ -411,6 +411,10 @@
     var heightSamples = [];
     var rightEdgeSamples = [];
     var bottomEdgeSamples = [];
+    
+    // Get snap margins for margin-adjusted edge positions
+    var hSnapMargin = getHSnapMargin();
+    var vSnapMargin = getVSnapMargin();
 
     // Loop through the smartly filtered list instead of the entire graph
     for (var i = 0; i < targetNodes.length; i += 1) {
@@ -429,11 +433,18 @@
       if (isFinite(width) && width > 0) widthSamples.push({ value: width, node: node });
       if (isFinite(height) && height > 0) heightSamples.push({ value: height, node: node });
       
-      // Positional Edge Clustering
+      // Positional Edge Clustering - include both raw edges and margin-adjusted positions
       rightEdgeSamples.push({ value: bounds.left, node: node });
       rightEdgeSamples.push({ value: bounds.right, node: node });
+      // Add margin-adjusted horizontal positions (for right-edge snapping with gap)
+      rightEdgeSamples.push({ value: bounds.left - hSnapMargin, node: node });
+      rightEdgeSamples.push({ value: bounds.right + hSnapMargin, node: node });
+      
       bottomEdgeSamples.push({ value: bounds.top, node: node });
       bottomEdgeSamples.push({ value: bounds.bottom, node: node });
+      // Add margin-adjusted vertical positions (for bottom-edge snapping with gap)
+      bottomEdgeSamples.push({ value: bounds.top - vSnapMargin, node: node });
+      bottomEdgeSamples.push({ value: bounds.bottom + vSnapMargin, node: node });
     }
 
     var tolerancePx = getDimensionTolerancePx();
