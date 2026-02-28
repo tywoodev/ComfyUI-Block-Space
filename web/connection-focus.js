@@ -475,7 +475,59 @@
     };
   }
 
-  function drawFlowOverlay(canvas, argsLike, animationTime, sourceOffset, targetOffset) {
+  function getSlotColor(node, isInput, slotIndex) {
+    if (!node) {
+      return null;
+    }
+    // Try to get color from the slot definition
+    var slots = isInput ? node.inputs : node.outputs;
+    if (slots && slots[slotIndex]) {
+      var slot = slots[slotIndex];
+      
+      // Return explicit color if defined on slot
+      if (typeof slot.color === "string" && slot.color) {
+        return slot.color;
+      }
+      
+      // Get color from slot type
+      if (slot.type && typeof slot.type === "string") {
+        var slotType = slot.type;
+        
+        // Check LiteGraph type_colors first (ComfyUI defines these)
+        var lg = window.LiteGraph;
+        if (lg && lg.type_colors && lg.type_colors[slotType]) {
+          return lg.type_colors[slotType];
+        }
+        
+        // Check LiteGraph constants like EVENT_COLOR, ACTION_COLOR, etc.
+        var constName = slotType.toUpperCase() + "_COLOR";
+        if (lg && lg[constName]) {
+          return lg[constName];
+        }
+        
+        // ComfyUI type color mappings (based on observed colors)
+        var typeMap = {
+          "MODEL": "#B39DDB",      // Light purple
+          "CLIP": "#FFD166",       // Yellow/gold
+          "VAE": "#FF6B6B",        // Red/coral
+          "LATENT": "#FF6B9D",     // Pink
+          "IMAGE": "#4ECDC4",      // Teal
+          "MASK": "#95E1D3",       // Light teal
+          "CONDITIONING": "#FFA07A", // Light salmon/orange
+          "FLOAT": "#AAEE88",      // Light green
+          "INT": "#AAEE88",        // Light green
+          "STRING": "#F7DC6F",     // Yellow
+          "BOOLEAN": "#87CEEB",    // Sky blue
+        };
+        if (typeMap[slotType]) {
+          return typeMap[slotType];
+        }
+      }
+    }
+    return null;
+  }
+
+  function drawFlowOverlay(canvas, argsLike, animationTime, sourceOffset, targetOffset, color) {
     if (!canvas || !argsLike || !argsLike.length) {
       return;
     }
@@ -496,7 +548,8 @@
     var bx = b[0];
     var by = b[1];
     var settings = getFocusSettings();
-    var pulseColor = settings.pulseColor;
+    // Use provided color or fall back to pulseColor
+    var flowColor = color || settings.pulseColor;
     var dashOffset = -((animationTime || 0) * 0.028);
     var prevLineWidth = ctx.lineWidth || 1;
     var stub = settings.connectorStubLength;
@@ -504,7 +557,7 @@
     ctx.save();
     ctx.globalAlpha = Math.min(1, ctx.globalAlpha * 0.95);
     ctx.lineWidth = Math.max(1.1, prevLineWidth + 0.2);
-    ctx.strokeStyle = pulseColor;
+    ctx.strokeStyle = flowColor;
     ctx.setLineDash([5, 11]);
     ctx.lineDashOffset = dashOffset;
     ctx.lineCap = "round";
@@ -733,7 +786,10 @@
 
     var result = drawHardAngleLink(arguments, sourceOffset, targetOffset);
     if (link.origin_id === focus.activeNodeId || link.target_id === focus.activeNodeId) {
-      drawFlowOverlay(this, arguments, focus.animationTime || 0, sourceOffset, targetOffset);
+      // Get the slot color from the origin node (output slot)
+      var originNode = this.graph.getNodeById(link.origin_id);
+      var slotColor = getSlotColor(originNode, false, link.origin_slot);
+      drawFlowOverlay(this, arguments, focus.animationTime || 0, sourceOffset, targetOffset, slotColor);
     }
     return result;
   };
@@ -770,31 +826,33 @@
 
       result = originalDrawNode.apply(this, arguments);
 
-      var pulseColor = getFocusSettings().pulseColor;
-
       if (isActiveNode) {
         var outputIndices = Object.keys(focus.activeOutputSlots);
         for (var i = 0; i < outputIndices.length; i += 1) {
-          drawSlotRing(node, ctx, false, Number(outputIndices[i]), pulseColor);
+          var outColor = getSlotColor(node, false, Number(outputIndices[i])) || getFocusSettings().pulseColor;
+          drawSlotRing(node, ctx, false, Number(outputIndices[i]), outColor);
         }
 
         var inputIndices = Object.keys(focus.activeInputSlots);
         for (var j = 0; j < inputIndices.length; j += 1) {
-          drawSlotRing(node, ctx, true, Number(inputIndices[j]), pulseColor);
+          var inColor = getSlotColor(node, true, Number(inputIndices[j])) || getFocusSettings().pulseColor;
+          drawSlotRing(node, ctx, true, Number(inputIndices[j]), inColor);
         }
       }
 
       if (focus.targetInputsByNode[node.id]) {
         var targetInputIndices = Object.keys(focus.targetInputsByNode[node.id]);
         for (var k = 0; k < targetInputIndices.length; k += 1) {
-          drawSlotRing(node, ctx, true, Number(targetInputIndices[k]), pulseColor);
+          var targetColor = getSlotColor(node, true, Number(targetInputIndices[k])) || getFocusSettings().pulseColor;
+          drawSlotRing(node, ctx, true, Number(targetInputIndices[k]), targetColor);
         }
       }
 
       if (focus.sourceOutputSlotsByNode[node.id]) {
         var sourceOutputIndices = Object.keys(focus.sourceOutputSlotsByNode[node.id]);
         for (var l = 0; l < sourceOutputIndices.length; l += 1) {
-          drawSlotRing(node, ctx, false, Number(sourceOutputIndices[l]), pulseColor);
+          var sourceColor = getSlotColor(node, false, Number(sourceOutputIndices[l])) || getFocusSettings().pulseColor;
+          drawSlotRing(node, ctx, false, Number(sourceOutputIndices[l]), sourceColor);
         }
       }
 

@@ -1,6 +1,6 @@
 import { app } from "/scripts/app.js";
 
-const ASSET_VERSION = "2026-02-27-settings-v6";
+const ASSET_VERSION = "2026-02-27-port-color-v3";
 
 function addSetting(definition) {
   const settings = app && app.ui && app.ui.settings;
