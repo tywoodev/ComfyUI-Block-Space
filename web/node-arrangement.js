@@ -45,10 +45,13 @@
     }
     if (nodes.length < 2) return;
 
+    // --- UNDO SUPPORT START ---
+    if (canvas.graph) canvas.graph.beforeChange();
+
     var settings = getSettings();
     var titleH = Number(window.LiteGraph && window.LiteGraph.NODE_TITLE_HEIGHT) || 24;
 
-    // 1. Define the Anchor (Top-leftmost node in selection)
+    // ... (rest of sorting logic)
     nodes.sort(function(a, b) {
       if (Math.abs(a.pos[1] - b.pos[1]) > 5) return a.pos[1] - b.pos[1];
       return a.pos[0] - b.pos[0];
@@ -58,9 +61,6 @@
     var startY = anchor.pos[1];
 
     if (mode === "grid") {
-      // --- SMART HARMONIZED GRID ---
-      
-      // A. Group into Columns based on X position
       var columns = [];
       var sortedByX = nodes.slice().sort((a, b) => a.pos[0] - b.pos[0]);
       
@@ -68,7 +68,6 @@
         var node = sortedByX[i];
         var placed = false;
         for (var c = 0; c < columns.length; c++) {
-          // If node is horizontally near an existing column average, add it
           var avgX = columns[c].reduce((sum, n) => sum + n.pos[0], 0) / columns[c].length;
           if (Math.abs(node.pos[0] - avgX) < 150) {
             columns[c].push(node);
@@ -79,54 +78,41 @@
         if (!placed) columns.push([node]);
       }
 
-      // Sort nodes within each column by Y
       columns.forEach(col => col.sort((a, b) => a.pos[1] - b.pos[1]));
-      // Sort columns themselves by average X
       columns.sort((a, b) => (a[0].pos[0] - b[0].pos[0]));
 
-      // B. Calculate Column Dimensions
       var colWidths = columns.map(col => Math.max(...col.map(n => getNodeBounds(n).width)));
       var colHeights = columns.map(col => {
         var sum = col.reduce((sum, n) => sum + getNodeBounds(n).height, 0);
         return sum + (col.length - 1) * settings.vMargin;
       });
 
-      // C. Target Height (Tallest Column)
       var targetTotalHeight = Math.max(...colHeights);
 
-      // D. Apply Positions and Harmonized Resizing
       var currentX = startX;
       for (var c = 0; c < columns.length; c++) {
         var col = columns[c];
         var currentY = startY;
-        
-        // How much extra height does this column need to match the tallest?
         var extraHeightNeeded = targetTotalHeight - colHeights[c];
         var heightBonusPerNode = extraHeightNeeded / col.length;
 
         for (var r = 0; r < col.length; r++) {
           var node = col[r];
           var bounds = getNodeBounds(node);
-          
           node.pos[0] = currentX;
           node.pos[1] = currentY;
-
-          // Harmonize: Resize node height to fill the gap
           var newContentHeight = Math.max(node.size[1], (bounds.height + heightBonusPerNode) - titleH);
           node.size[1] = newContentHeight;
-
+          node.size[0] = colWidths[c];
           currentY += newContentHeight + titleH + settings.vMargin;
         }
         currentX += colWidths[c] + settings.hMargin;
       }
-
     } else {
-      // Original Stack/Flow logic
       for (var i = 1; i < nodes.length; i++) {
         var prev = nodes[i - 1];
         var node = nodes[i];
         var prevBounds = getNodeBounds(prev);
-
         if (mode === "y") {
           node.pos[0] = anchor.pos[0];
           node.pos[1] = prevBounds.bottom + settings.vMargin;
@@ -136,6 +122,9 @@
         }
       }
     }
+
+    // --- UNDO SUPPORT END ---
+    if (canvas.graph) canvas.graph.afterChange();
 
     canvas.dirty_canvas = true;
     canvas.dirty_bgcanvas = true;
@@ -211,7 +200,7 @@
       if (window.app && window.app.canvas) arrangeSelection(window.app.canvas, "x");
     }));
 
-    panel.appendChild(createBtn("Grid", "⊞", function() {
+    panel.appendChild(createBtn("Harmonize", "💎", function() {
       if (window.app && window.app.canvas) arrangeSelection(window.app.canvas, "grid");
     }));
 
