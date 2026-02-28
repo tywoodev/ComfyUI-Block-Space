@@ -1,6 +1,6 @@
 import { app } from "/scripts/app.js";
 
-const ASSET_VERSION = "2026-02-27-comfyui-node-snapping-v4";
+const ASSET_VERSION = "2026-02-27-connector-settings-v5";
 
 const CONNECTOR_DEFAULTS = {
   flowColor: "#ff00ae",
@@ -156,6 +156,10 @@ async function ensureRuntimeScriptsLoaded(baseUrl) {
 }
 
 function getConnectorSettings() {
+  const isEnabled = asBool(
+    getSettingValue("comfyuiBlockSpace.connector.enableAngled", CONNECTOR_DEFAULTS.enableAngled),
+    CONNECTOR_DEFAULTS.enableAngled
+  );
   return {
     pulseColor: asColor(
       getSettingValue("comfyuiBlockSpace.connector.flowColor", CONNECTOR_DEFAULTS.flowColor),
@@ -165,18 +169,10 @@ function getConnectorSettings() {
       getSettingValue("comfyuiBlockSpace.connector.preferredStyle", CONNECTOR_DEFAULTS.preferredStyle),
       CONNECTOR_DEFAULTS.preferredStyle
     ),
-    enableHybrid: asBool(
-      getSettingValue("comfyuiBlockSpace.connector.enableHybrid", CONNECTOR_DEFAULTS.enableHybrid),
-      CONNECTOR_DEFAULTS.enableHybrid
-    ),
-    enableStraight: asBool(
-      getSettingValue("comfyuiBlockSpace.connector.enableStraight", CONNECTOR_DEFAULTS.enableStraight),
-      CONNECTOR_DEFAULTS.enableStraight
-    ),
-    enableAngled: asBool(
-      getSettingValue("comfyuiBlockSpace.connector.enableAngled", CONNECTOR_DEFAULTS.enableAngled),
-      CONNECTOR_DEFAULTS.enableAngled
-    ),
+    // All connector types enabled when master toggle is on
+    enableHybrid: isEnabled,
+    enableStraight: isEnabled,
+    enableAngled: isEnabled,
   };
 }
 
@@ -227,16 +223,16 @@ function registerConnectorSettings() {
   const cat = ["comfyuiBlockSpace", "1. Connector Settings"];
   
   addSetting({
-    id: "comfyuiBlockSpace.connector.flowColor",
-    name: "Flow Color",
+    id: "comfyuiBlockSpace.connector.enableAngled",
+    name: "Enable Custom Connectors",
     category: cat,
-    type: "text",
-    defaultValue: CONNECTOR_DEFAULTS.flowColor,
+    type: "boolean",
+    defaultValue: CONNECTOR_DEFAULTS.enableAngled,
     onChange: applyConnectorSettings,
   });
   addSetting({
     id: "comfyuiBlockSpace.connector.preferredStyle",
-    name: "Preferred Style",
+    name: "Connector Style",
     category: cat,
     type: "combo",
     options: ["hybrid", "straight", "angled"],
@@ -244,27 +240,11 @@ function registerConnectorSettings() {
     onChange: applyConnectorSettings,
   });
   addSetting({
-    id: "comfyuiBlockSpace.connector.enableHybrid",
-    name: "Enable Hybrid Nodes",
+    id: "comfyuiBlockSpace.connector.flowColor",
+    name: "Flow Color",
     category: cat,
-    type: "boolean",
-    defaultValue: CONNECTOR_DEFAULTS.enableHybrid,
-    onChange: applyConnectorSettings,
-  });
-  addSetting({
-    id: "comfyuiBlockSpace.connector.enableStraight",
-    name: "Enable Straight Nodes",
-    category: cat,
-    type: "boolean",
-    defaultValue: CONNECTOR_DEFAULTS.enableStraight,
-    onChange: applyConnectorSettings,
-  });
-  addSetting({
-    id: "comfyuiBlockSpace.connector.enableAngled",
-    name: "Enable Custom Connectors",
-    category: cat,
-    type: "boolean",
-    defaultValue: CONNECTOR_DEFAULTS.enableAngled,
+    type: "text",
+    defaultValue: CONNECTOR_DEFAULTS.flowColor,
     onChange: applyConnectorSettings,
   });
 }
