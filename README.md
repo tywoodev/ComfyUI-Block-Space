@@ -1,13 +1,38 @@
-# TDub's ComfyUI Block Space
+# ComfyUI-Block-Space 🧱
 
-A professional UX enhancement suite for ComfyUI. This extension transforms your workspace into a high-efficiency design environment with smarter wiring, precision snapping, and one-click layout optimization.
+A Figma-style layout and snapping engine for the ComfyUI canvas. 
 
-The goal: build, read, and maintain complex node graphs with pixel-perfect precision.
+Tired of messy workflows and nodes overlapping? **Block-Space** replaces ComfyUI's default snapping with an intelligent, spatial-aware layout engine that brings professional UI design mechanics to your node graphs.
+
+## ✨ Features
+
+*   **Intelligent Raycast Snapping:** Nodes automatically align to the Top, Bottom, and Center of nearby nodes as you drag them.
+*   **Topological Adjacency (Occlusion):** The engine is smart enough to ignore nodes that are blocked by other nodes, ensuring you only snap to immediate neighbors in your column or row.
+*   **Isolated Node Support:** Dragging a node into empty space? It will scan the global rhythm of your canvas to keep your entire graph perfectly aligned horizontally and vertically.
+*   **Visual Feedback:** Figma-style "SNAP" badges and alignment lines let you know exactly what your node is locking onto.
+*   **Predictable Resizing:** Expanding a node snaps its dimensions to match the widths and heights of surrounding nodes for a uniform look.
+
+## 🚀 Installation
+
+**Method 1: ComfyUI Manager (Recommended)**
+1. Open the ComfyUI Manager.
+2. Search for `ComfyUI-Block-Space`.
+3. Click **Install** and restart ComfyUI.
+
+**Method 2: Manual Git Clone**
+Navigate to your ComfyUI `custom_nodes` folder in your terminal and run:
+```bash
+git clone https://github.com/tywoodev/ComfyUI-Block-Space.git
+```
+Restart ComfyUI.
 
 ---
 
-## 1. High-Fidelity Snapping & Harmonizing
+# Visual Deep Dive
 
+The goal of Block Space is to transform ComfyUI into a pixel-perfect, high-efficiency design environment.
+
+## 1. High-Fidelity Snapping & Harmonizing
 Precision snapping that understands the visual geometry of your nodes. 
 
 ![Snapping & Harmonizing](assets/snap-harmonize.gif)
@@ -17,7 +42,6 @@ Precision snapping that understands the visual geometry of your nodes.
 - **Visual Guides:** Dotted alignment lines appear during drags and resizes to frame your nodes and show exactly which edges are being aligned.
 
 ## 2. Animated Flow Visualization
-
 Gain instant clarity on your data flow with high-visibility animations and port indicators.
 
 ![Animated Connectors](assets/animated-connectors.gif)
@@ -27,7 +51,6 @@ Gain instant clarity on your data flow with high-visibility animations and port 
 - **White-Dashed Overlays:** Animated overlays ensure you can see your active connections clearly against any background or node color.
 
 ## 3. Custom Connector Types
-
 Choose the aesthetic that best fits your workflow and reduces visual noise.
 
 ![Connector Types](assets/connector-types.gif)
@@ -37,7 +60,6 @@ Choose the aesthetic that best fits your workflow and reduces visual noise.
 - **Angled Style:** A technical, "circuit-board" aesthetic that creates very clear horizontal and vertical pathways, ideal for highly structured layouts.
 
 ## 4. Shift to Bypass Snapping
-
 Handle intricate positioning with ease without fighting the alignment engine.
 
 ![Shift to Bypass](assets/shift-to-bypass.gif)
@@ -46,7 +68,6 @@ Handle intricate positioning with ease without fighting the alignment engine.
 - **Total Control:** Bypass gives you the freedom to handle unique edge cases without needing to toggle snapping off in the settings menu.
 
 ## 5. Professional Settings Panel
-
 Customize your experience with an intuitive, branded interface.
 
 ![Settings](assets/settings.gif)
@@ -55,15 +76,6 @@ Customize your experience with an intuitive, branded interface.
 - **Real-Time Updates:** Most settings apply immediately, allowing you to fine-tune your margins and colors without refreshing your browser. (A refresh is required after changing the ConnectorStyle)
 
 ---
-
-## Installation
-
-```bash
-cd ComfyUI/custom_nodes
-git clone https://github.com/tywoodev/comfy-ui-better-nodes.git comfyui-block-space
-```
-
-Restart ComfyUI. The extension will auto-load and inject the arrangement tools, snapping engine, and settings panel.
 
 ## License
 
