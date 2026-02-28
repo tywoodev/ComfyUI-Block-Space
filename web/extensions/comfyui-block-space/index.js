@@ -261,7 +261,7 @@ function registerConnectorSettings() {
   });
   addSetting({
     id: "comfyuiBlockSpace.connector.enableAngled",
-    name: "Enable Angled Nodes",
+    name: "Enable Custom Connectors",
     category: cat,
     type: "boolean",
     defaultValue: CONNECTOR_DEFAULTS.enableAngled,
