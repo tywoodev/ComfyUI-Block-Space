@@ -473,6 +473,7 @@
     }
     
     var allNodes = getGraphNodes(canvas);
+    var selectedNodesMap = canvas.selected_nodes || null;
     
     // --- IMPLEMENTING THE ADJACENCY FILTER ---
     // Instead of using allNodes, we filter down to the "Green Box"
@@ -484,6 +485,10 @@
     for (var i = 0; i < adjacentNodes.length; i += 1) {
       var node = adjacentNodes[i];
       if (!node || node === activeNode || node.constructor === window.LGraphGroup) {
+        continue;
+      }
+      // Exclude other selected nodes from being snap targets
+      if (selectedNodesMap && node.id != null && selectedNodesMap[node.id]) {
         continue;
       }
       var bounds = getNodeBounds(node);
@@ -650,12 +655,17 @@
     maxSearchDistance,
     axis,
     direction,
-    ignoreMaxSearchDistance
+    ignoreMaxSearchDistance,
+    selectedNodesMap
   ) {
     var valid = [];
     for (var i = 0; i < allNodes.length; i += 1) {
       var target = allNodes[i];
       if (!target || target === activeNode || target.constructor === window.LGraphGroup) {
+        continue;
+      }
+      // Exclude other selected nodes from being snap targets
+      if (selectedNodesMap && target.id != null && selectedNodesMap[target.id]) {
         continue;
       }
       var targetBounds = getNodeBounds(target);
@@ -720,7 +730,8 @@
     primary,
     fallback,
     ignoreMaxSearchDistance,
-    xSortByGap
+    xSortByGap,
+    selectedNodesMap
   ) {
     if (primary == null) {
       primary = axis === "y" ? "above" : "left";
@@ -735,7 +746,8 @@
       maxSearchDistance,
       axis,
       primary,
-      ignoreMaxSearchDistance
+      ignoreMaxSearchDistance,
+      selectedNodesMap
     );
     if (!valid.length) {
       if (fallback) {
@@ -746,7 +758,8 @@
           maxSearchDistance,
           axis,
           fallback,
-          ignoreMaxSearchDistance
+          ignoreMaxSearchDistance,
+          selectedNodesMap
         );
       }
     }
@@ -2161,6 +2174,29 @@
       this.__blockSpaceResetPersistedHighlightDone = true;
     }
 
+    // Capture pre-move positions for ALL selected nodes to prevent "drift" 
+    // caused by independent per-node grid snapping in LiteGraph.
+    var dragSnapshot = null;
+    if (this.node_dragged || (this.last_mouse_dragging && this.current_node)) {
+      var primary = this.node_dragged || this.current_node;
+      if (primary && primary.pos) {
+        dragSnapshot = {
+          anchor: primary,
+          anchorX: primary.pos[0],
+          anchorY: primary.pos[1],
+          nodes: []
+        };
+        if (this.selected_nodes) {
+          for (var id in this.selected_nodes) {
+            var n = this.selected_nodes[id];
+            if (n && n.pos && n !== primary) {
+              dragSnapshot.nodes.push({ node: n, x: n.pos[0], y: n.pos[1] });
+            }
+          }
+        }
+      }
+    }
+
     var resizingNodeBefore = this.resizing_node || null;
     var result = originalProcessMouseMove.apply(this, arguments);
     if (event && typeof event.canvasX === "number") {
@@ -2172,6 +2208,14 @@
       this.__blockSpaceCursorY = event.canvasY;
     } else if (event && typeof event.clientY === "number") {
       this.__blockSpaceCursorY = event.clientY;
+    }
+
+    // Bypass snapping if Shift key is held
+    if (event && event.shiftKey) {
+      this.__blockSpaceResizeDebugStatus = null;
+      renderResizeDebugHud(this);
+      updateSnapFeedback(this);
+      return result;
     }
 
     var resizingNode = this.resizing_node || resizingNodeBefore;
@@ -2218,6 +2262,10 @@
       return result;
     }
 
+    // Capture original positions AFTER LiteGraph move for hysteresis/delta logic
+    var originalX = activeNode.pos[0];
+    var originalY = activeNode.pos[1];
+
     var hSnapMargin = getHSnapMargin();
     var vSnapMargin = getVSnapMargin();
     var xSearchDistance = hSnapMargin * 2;
@@ -2226,8 +2274,6 @@
       SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(this));
     var exitThresholdCanvas = baseMoveThreshold * EXIT_THRESHOLD_MULTIPLIER;
     var thresholdCanvasX = baseMoveThreshold * getMoveSnapStrength();
-    // Use a conservative acquire threshold for Y to avoid long-distance jump snaps.
-    // Y-specific strength is applied to sticky retention, not initial acquisition.
     var thresholdCanvasY = baseMoveThreshold * getMoveSnapStrength();
 
     // Hysteresis State Check
@@ -2239,21 +2285,22 @@
     var currentThresholdY = wasSnappedY ? (exitThresholdCanvas * getMoveSnapStrength()) : thresholdCanvasY;
 
     var nodes = getGraphNodes(this);
+    var selectedNodesMap = this.selected_nodes || null;
     var didSnap = false;
     var xDidSnapMove = false;
     var yDidSnapMove = false;
 
-    var xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, xSearchDistance, "x", "left", null);
+    var xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, xSearchDistance, "x", "left", null, false, false, selectedNodesMap);
     var xUseTopBottomFallback = false;
     if (!xWinner) {
-      xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, ySearchDistance, "y", "above", null);
+      xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, ySearchDistance, "y", "above", null, false, false, selectedNodesMap);
       xUseTopBottomFallback = !!xWinner;
       if (!xWinner) {
-        xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, ySearchDistance, "y", "below", null);
+        xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, ySearchDistance, "y", "below", null, false, false, selectedNodesMap);
         xUseTopBottomFallback = !!xWinner;
       }
       if (!xWinner) {
-        xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, xSearchDistance, "x", "right", null);
+        xWinner = chooseWinningTargetForAxis(activeNode, activeBounds, nodes, xSearchDistance, "x", "right", null, false, false, selectedNodesMap);
       }
     }
     var xCandidate = null;
@@ -2286,8 +2333,6 @@
     var moveYLine = null;
 
     if (topWinner || bottomWinner) {
-      // Prioritize top-edge snapping by giving it a 2px "bias" advantage.
-      // This means if the top is slightly further than the bottom, we still pick the top.
       var topBias = 2; 
       if (topWinner && (!bottomWinner || (topDelta <= (bottomDelta + topBias)))) {
         moveYWinner = topWinner;
@@ -2323,6 +2368,21 @@
       activeNode.pos[1] = moveYTarget;
       didSnap = true;
       yDidSnapMove = true;
+    }
+
+    // Force ALL selected nodes to follow the anchor's total movement exactly.
+    // This overrides independent grid snapping and keeps the selection locked.
+    if (dragSnapshot && dragSnapshot.anchor === activeNode) {
+      var totalMoveX = activeNode.pos[0] - dragSnapshot.anchorX;
+      var totalMoveY = activeNode.pos[1] - dragSnapshot.anchorY;
+      
+      for (var i = 0; i < dragSnapshot.nodes.length; i++) {
+        var entry = dragSnapshot.nodes[i];
+        if (entry.node && entry.node.pos) {
+          entry.node.pos[0] = entry.x + totalMoveX;
+          entry.node.pos[1] = entry.y + totalMoveY;
+        }
+      }
     }
 
     if (!xWinner && !moveYWinner) {
