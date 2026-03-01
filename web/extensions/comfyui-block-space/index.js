@@ -1,6 +1,6 @@
 import { app } from "/scripts/app.js";
 
-const ASSET_VERSION = "2026-02-27-settings-expansion-v1";
+const ASSET_VERSION = "2026-03-01-adapter-v2";
 
 function addSetting(definition) {
   const settings = app && app.ui && app.ui.settings;
@@ -203,18 +203,23 @@ function injectSettingsIcon() {
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
-async function loadScript(url) {
+async function loadScript(url, options = {}) {
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = url;
     script.async = false;
+    if (options.type) {
+      script.type = options.type;
+    }
     script.onload = () => resolve(url);
     script.onerror = () => reject(new Error("Failed to load script: " + url));
     document.body.appendChild(script);
   });
 }
 
-async function ensureRuntimeScriptsLoaded(baseUrl) {
+// Legacy fallback: load individual scripts (original behavior)
+async function loadLegacyScripts(baseUrl) {
+  console.warn("[BlockSpace] Loading legacy scripts as fallback");
   const scripts = [
     "../../smart-drop.js",
     "../../smart-sizing.js",
@@ -228,17 +233,49 @@ async function ensureRuntimeScriptsLoaded(baseUrl) {
   }
 }
 
+// New modular loading: load index.js as ES module
+async function loadBlockSpaceAdapter(baseUrl) {
+  const indexUrl = new URL("../../index.js", baseUrl).toString() + "?v=" + ASSET_VERSION;
+  
+  // Load as ES module
+  await loadScript(indexUrl, { type: "module" });
+  
+  // Wait for BlockSpace to initialize
+  // The index.js will auto-initialize, but we expose BlockSpaceInit for manual control
+  if (window.BlockSpaceInit) {
+    await window.BlockSpaceInit();
+  } else {
+    // If BlockSpaceInit is not available, wait a bit for module to load
+    await new Promise(resolve => setTimeout(resolve, 100));
+    if (window.BlockSpaceInit) {
+      await window.BlockSpaceInit();
+    } else {
+      throw new Error("BlockSpaceInit not available after loading index.js");
+    }
+  }
+}
+
 app.registerExtension({
   name: "Block Space",
   async setup() {
+    // Load BetterNodesSettings (still needed for settings store)
     await loadScript(new URL("../../better-nodes-settings.js", import.meta.url).toString() + "?v=" + ASSET_VERSION);
 
     if (window.BetterNodesSettings && typeof window.BetterNodesSettings.__setComfyUIRuntime === "function") {
       window.BetterNodesSettings.__setComfyUIRuntime(true);
     }
 
-    await ensureRuntimeScriptsLoaded(import.meta.url);
+    // Try new modular loading first, fallback to legacy on failure
+    try {
+      await loadBlockSpaceAdapter(import.meta.url);
+      console.log("[BlockSpace] Adapter loaded successfully");
+    } catch (error) {
+      console.error("[BlockSpace] Failed to load adapter:", error);
+      console.warn("[BlockSpace] Falling back to legacy script loading");
+      await loadLegacyScripts(import.meta.url);
+    }
 
+    // Reset persisted highlights (backward compatibility)
     if (
       window.BlockSpaceNodeSnap &&
       typeof window.BlockSpaceNodeSnap.resetPersistedHighlightArtifacts === "function"
