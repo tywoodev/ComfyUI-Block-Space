@@ -77,6 +77,53 @@ Customize your experience with an intuitive, branded interface.
 
 ---
 
+## 🏗️ Architecture
+
+Block Space uses an **Adapter Pattern** to support both the classic ComfyUI (V1/LiteGraph) and the upcoming Vue-based interface (V2).
+
+### File Structure
+
+```
+web/
+├── index.js              # Entry point - detects V1/V2 and loads appropriate adapter
+├── core-math.js          # Pure spatial logic (V1/V2 agnostic)
+├── adapter-v1.js         # V1 integration (LiteGraph canvas)
+├── better-nodes-settings.js  # Settings storage utility
+└── extensions/
+    └── comfyui-block-space/
+        └── index.js      # Extension registration
+
+docs/
+└── RECOVERY.md           # Troubleshooting guide
+```
+
+### Core Components
+
+| Module | Purpose |
+|--------|---------|
+| **core-math.js** | Pure spatial calculations: bounds, clustering, raycasting. No UI dependencies. |
+| **adapter-v1.js** | V1 integration: patches `LGraphCanvas`, handles DOM overlays, manages state. |
+| **index.js** | Environment detection and adapter loading. |
+
+### V1/V2 Compatibility
+
+- **V1 (Current):** Full support via `adapter-v1.js`
+- **V2 (Future):** Architecture ready for Vue/DOM adapter
+
+The extension automatically detects the ComfyUI version and loads the appropriate adapter.
+
+---
+
+## 🛠️ Troubleshooting
+
+If Block Space fails to load after an update:
+
+1. **Hard Refresh:** Press `Ctrl+F5` (or `Cmd+Shift+R` on Mac)
+2. **Clear Cache:** Open DevTools (F12) → Right-click refresh → "Empty Cache and Hard Reload"
+3. **See [docs/RECOVERY.md](docs/RECOVERY.md)** for detailed recovery steps
+
+---
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
