@@ -558,18 +558,16 @@ function renderDimensionAssociationHighlights(canvas, status) {
 
     if (item.width) {
       if (status.axis === "move") {
-        // For move snapping, show guide on the edge that was snapped to
-        const xSnapEdge = status.xSnapEdge || 'left';
-        let anchorCanvasX;
-        if (xSnapEdge === 'right') {
-          anchorCanvasX = bounds.right;
-        } else if (xSnapEdge === 'center') {
-          anchorCanvasX = bounds.left + (bounds.right - bounds.left) / 2;
-        } else {
-          anchorCanvasX = bounds.left;
-        }
+        // For move snapping, show guide on the target edge closest to active node
+        const activeCenterX = status.activeCenterX ?? bounds.left;
+        const targetCenterX = bounds.left + (bounds.right - bounds.left) / 2;
+        
+        // Active node is to the left of target center -> show target's LEFT edge
+        // Active node is to the right of target center -> show target's RIGHT edge
+        const anchorCanvasX = activeCenterX < targetCenterX ? bounds.left : bounds.right;
+        
         let lineXClient = graphToClient(canvas, anchorCanvasX, bounds.top).x;
-        if (xSnapEdge === 'right') lineXClient -= borderW;
+        if (anchorCanvasX === bounds.right) lineXClient -= borderW;
         appendLine(lineXClient, contentTop, borderW, contentHeight, guideColor);
       } else {
         appendLine(left, contentTop, borderW, contentHeight, guideColor);
@@ -577,10 +575,23 @@ function renderDimensionAssociationHighlights(canvas, status) {
       }
     }
     if (item.height) {
-      // Top edge guide - at content top (below title bar)
-      appendLine(left, contentTop, width, borderW, guideColor);
-      // Bottom edge guide - exactly at node bottom edge
-      appendLine(left, contentBottom, width, borderW, guideColor);
+      if (status.axis === "move") {
+        // For move snapping, show guide on the target edge closest to active node
+        const activeCenterY = status.activeCenterY ?? bounds.top;
+        const targetCenterY = bounds.top + (bounds.bottom - bounds.top) / 2;
+        
+        // Active node is above target center -> show target's TOP edge
+        // Active node is below target center -> show target's BOTTOM edge
+        const anchorCanvasY = activeCenterY < targetCenterY ? contentTop : contentBottom;
+        
+        appendLine(left, anchorCanvasY, width, borderW, guideColor);
+      } else {
+        // For resize, show both edges
+        // Top edge guide - at content top (below title bar)
+        appendLine(left, contentTop, width, borderW, guideColor);
+        // Bottom edge guide - exactly at node bottom edge
+        appendLine(left, contentBottom, width, borderW, guideColor);
+      }
     }
   }
 }
@@ -1561,18 +1572,11 @@ function initNodeSnappingPatches() {
     const moveXMemory = ensureMoveXPointMemory(this, activeNode, hSnapMargin);
     const moveXClusters = moveXMemory ? buildDimensionClusters(moveXMemory.points, moveXMemory.tolerancePx) : [];
     const xWinner = pickNearestMoveCluster(moveXClusters, activeBounds.left);
-    let xSnapEdge = 'left'; // Track which edge of target node was snapped to
 
     if (xWinner && Math.abs(activeBounds.left - xWinner.center) <= currentThresholdX) {
       activeNode.pos[0] = xWinner.center;
       didSnap = true;
       xDidSnapMove = true;
-      // Determine which edge type won for guide rendering
-      if (xWinner.members?.length) {
-        const closest = xWinner.members.slice().sort((a, b) => Math.abs(a.value - xWinner.center) - Math.abs(b.value - xWinner.center))[0];
-        if (closest?.type?.includes('right')) xSnapEdge = 'right';
-        else if (closest?.type?.includes('center')) xSnapEdge = 'center';
-      }
     }
 
     // Y Axis
@@ -1721,7 +1725,8 @@ function initNodeSnappingPatches() {
       yDidSnap: yDidSnapMove,
       xWinnerNodes: xWinnerNodes,
       yWinnerNodes: yWinnerNodes,
-      xSnapEdge: xSnapEdge,
+      activeCenterX: activeBounds.centerX,
+      activeCenterY: activeBounds.centerY,
     };
 
     if (didSnap) {
