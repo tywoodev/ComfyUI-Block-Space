@@ -214,6 +214,7 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+.claude/
 .gemini/
 .geminiignore
 GEMINI.md
