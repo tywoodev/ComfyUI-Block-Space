@@ -1,117 +1,116 @@
 /**
  * Environment Detector for ComfyUI V1/V2
- * Non-blocking async detection with polling
+ * Defaults to V1 immediately, switches to V2 if detected
  */
 
 const BLOCKSPACE_VERSION = "2.0.0-adapter";
 
 // Detection state
-let detectionResult = null;
-let detectionCallbacks = [];
+let currentAdapter = 'v1';
+let v2Detected = false;
 
 /**
  * Check for V2 DOM nodes (data-node-id attribute)
+ * This is the definitive V2 marker
  */
 function checkV2DOMNodes() {
   return document.querySelector('[data-node-id]') !== null;
 }
 
 /**
- * Quick environment check - synchronous
+ * Load V1 adapter immediately (default)
  */
-function quickCheck() {
-  if (checkV2DOMNodes()) return 'v2';
-  
-  // If no V2 nodes but we have LiteGraph canvas, probably V1
-  const canvas = document.querySelector('canvas.litegraph');
-  if (canvas && window.LiteGraph) return 'v1';
-  
-  return null; // Need to wait
+function loadV1Adapter() {
+  import('./adapter-v1.js')
+    .then(({ initV1Adapter }) => {
+      initV1Adapter();
+      console.log('[BlockSpace] V1 adapter loaded (default)');
+    })
+    .catch(err => {
+      console.error('[BlockSpace] Failed to load V1 adapter:', err);
+    });
 }
 
 /**
- * Poll for environment detection without blocking
+ * Switch to V2 adapter
  */
-function startDetectionPolling() {
-  if (detectionResult) return; // Already detected
+function switchToV2Adapter() {
+  if (v2Detected) return; // Already switched
+  v2Detected = true;
+  currentAdapter = 'v2';
   
-  const maxAttempts = 50; // 5 seconds total (100ms * 50)
+  console.log('[BlockSpace] V2 detected, switching adapter...');
+  
+  // TODO: In future, we might need to cleanup V1 adapter first
+  // For now, just load V2 on top (V2 stub doesn't conflict)
+  import('./adapter-v2.js')
+    .then(({ initV2Adapter }) => {
+      initV2Adapter();
+      console.log('[BlockSpace] Switched to V2 adapter');
+    })
+    .catch(err => {
+      console.error('[BlockSpace] Failed to load V2 adapter:', err);
+    });
+}
+
+/**
+ * Poll for V2 detection (V2 DOM renders async)
+ */
+function startV2DetectionPolling() {
+  // Check immediately first
+  if (checkV2DOMNodes()) {
+    switchToV2Adapter();
+    return;
+  }
+  
+  const maxAttempts = 200; // 4 seconds total (20ms * 200)
   let attempts = 0;
   
   const poll = () => {
     attempts++;
     
-    // Try to detect
-    const result = quickCheck();
-    if (result) {
-      detectionResult = result;
-      console.log(`[BlockSpace] Detected: ${result} (after ${attempts} attempts)`);
-      loadAdapter(result);
+    if (checkV2DOMNodes()) {
+      switchToV2Adapter();
       return;
     }
     
-    // Continue polling if not maxed out
     if (attempts < maxAttempts) {
-      setTimeout(poll, 100);
-    } else {
-      // Timeout - default to V1
-      detectionResult = 'v1';
-      console.warn('[BlockSpace] Detection timeout, defaulting to V1');
-      loadAdapter('v1');
+      setTimeout(poll, 20);
     }
+    // No timeout warning - V1 default is the expected behavior
   };
   
-  // Start polling - non-blocking
-  setTimeout(poll, 100);
-}
-
-/**
- * Load the appropriate adapter
- */
-function loadAdapter(version) {
-  if (version === 'v2') {
-    import('./adapter-v2.js')
-      .then(({ initV2Adapter }) => {
-        initV2Adapter();
-        console.log('[BlockSpace] V2 adapter loaded');
-      })
-      .catch(err => {
-        console.error('[BlockSpace] Failed to load V2 adapter:', err);
-      });
-  } else {
-    import('./adapter-v1.js')
-      .then(({ initV1Adapter }) => {
-        initV1Adapter();
-        console.log('[BlockSpace] V1 adapter loaded');
-      })
-      .catch(err => {
-        console.error('[BlockSpace] Failed to load V1 adapter:', err);
-      });
-  }
+  setTimeout(poll, 20);
 }
 
 /**
  * Manual detection check (for debugging)
  */
-export function detectEnvironment() {
-  return detectionResult || quickCheck() || 'unknown';
+function detectEnvironment() {
+  return checkV2DOMNodes() ? 'v2' : currentAdapter;
 }
 
 /**
  * Force load a specific adapter (for testing)
  */
-export function forceLoadAdapter(version) {
-  detectionResult = version;
-  loadAdapter(version);
+function forceLoadAdapter(version) {
+  if (version === 'v2' && !v2Detected) {
+    switchToV2Adapter();
+  } else if (version === 'v1' && currentAdapter !== 'v1') {
+    console.log('[BlockSpace] Forcing V1 adapter reload not implemented');
+  }
 }
 
-// Start detection immediately without blocking
-// Use requestIdleCallback if available, otherwise setTimeout
+// Initialize: Load V1 immediately, poll for V2 in background
 if (typeof window !== 'undefined') {
+  // V1 loads immediately - no delay
+  loadV1Adapter();
+  
+  // V2 detection happens in background
   if ('requestIdleCallback' in window) {
-    requestIdleCallback(() => startDetectionPolling());
+    requestIdleCallback(() => startV2DetectionPolling());
   } else {
-    setTimeout(startDetectionPolling, 10);
+    setTimeout(startV2DetectionPolling, 10);
   }
 }
 
