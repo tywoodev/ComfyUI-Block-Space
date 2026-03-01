@@ -10,15 +10,24 @@ const BLOCKSPACE_VERSION = "2.0.0-adapter";
 /**
  * Detect ComfyUI version/environment
  * V1: window.LGraphCanvas exists (LiteGraph canvas)
- * V2: window.app.extensionManager exists and no LGraphCanvas (Vue/DOM)
+ * V2: window.comfyAPI exists or __COMFYUI_FRONTEND_VERSION__ >= 2 (Vue/DOM)
  */
 function detectEnvironment() {
-  // V2 detection: Vue-based DOM interface without LiteGraph
-  if (window.app?.extensionManager?.setting?.get) {
-    // Additional check: V2 doesn't have LGraphCanvas
-    if (typeof window.LGraphCanvas === 'undefined') {
-      return 'v2';
-    }
+  // V2 detection: Check for V2-specific APIs first
+  // New frontend exposes comfyAPI and has a version marker
+  if (typeof window.comfyAPI !== 'undefined') {
+    return 'v2';
+  }
+  
+  // Alternative V2 detection: version marker
+  if (window.__COMFYUI_FRONTEND_VERSION__ && window.__COMFYUI_FRONTEND_VERSION__ >= 2) {
+    return 'v2';
+  }
+  
+  // Check if extensionManager exists without LGraphCanvas
+  // This might catch some V2 edge cases
+  if (window.app?.extensionManager?.setting?.get && typeof window.LGraphCanvas === 'undefined') {
+    return 'v2';
   }
   
   // V1 detection: Classic LiteGraph canvas
