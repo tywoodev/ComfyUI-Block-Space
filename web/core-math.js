@@ -9,13 +9,35 @@
 // Constants (mirroring node-snapping.js defaults)
 // ============================================================================
 
+// Snap aggressiveness presets
+const SNAP_AGGRESSIVENESS = {
+  LOW: {
+    moveSnapStrength: 0.8,
+    moveYSnapStrength: 1.0,
+    resizeSnapStrength: 1.0,
+    exitMultiplier: 2.5
+  },
+  MEDIUM: {
+    moveSnapStrength: 1.0,
+    moveYSnapStrength: 1.5,
+    resizeSnapStrength: 1.5,
+    exitMultiplier: 2.0
+  },
+  HIGH: {
+    moveSnapStrength: 1.0,
+    moveYSnapStrength: 2.4,
+    resizeSnapStrength: 2.4,
+    exitMultiplier: 1.5
+  }
+};
+
 const SNAP_THRESHOLD = 10;
-const EXIT_THRESHOLD_MULTIPLIER = 1.5;
+const EXIT_THRESHOLD_MULTIPLIER = 1.5; // Legacy fallback
 const DEFAULT_H_SNAP_MARGIN = 60;
 const DEFAULT_V_SNAP_MARGIN = 40;
 const DEFAULT_MOVE_SNAP_STRENGTH = 1.0;
-const DEFAULT_MOVE_Y_SNAP_STRENGTH = 2.4;
-const DEFAULT_RESIZE_SNAP_STRENGTH = 2.4;
+const DEFAULT_MOVE_Y_SNAP_STRENGTH = 1.5; // Reduced from 2.4
+const DEFAULT_RESIZE_SNAP_STRENGTH = 1.5; // Reduced from 2.4
 const DEFAULT_DIMENSION_TOLERANCE_PX = 12;
 const DEFAULT_HIGHLIGHT_ENABLED = true;
 const DEFAULT_HIGHLIGHT_COLOR = "#1a3a6b";
@@ -109,34 +131,50 @@ export function isSnappingEnabled() {
   return !!getSettingValue("BlockSpace.Snap.Enabled", true);
 }
 
+export function getSnapAggressiveness() {
+  const value = getSettingValue("BlockSpace.Snap.Aggressiveness", "Medium");
+  return ["Low", "Medium", "High"].includes(value) ? value : "Medium";
+}
+
 export function getMoveSnapStrength() {
+  const aggressiveness = getSnapAggressiveness();
+  const baseStrength = SNAP_AGGRESSIVENESS[aggressiveness].moveSnapStrength;
   return clampNumber(
-    getSettingValue("BlockSpace.Snap.MoveStrength", DEFAULT_MOVE_SNAP_STRENGTH),
+    getSettingValue("BlockSpace.Snap.MoveStrength", baseStrength),
     0.1,
     5,
-    DEFAULT_MOVE_SNAP_STRENGTH
+    baseStrength
   );
 }
 
 export function getResizeSnapStrength() {
+  const aggressiveness = getSnapAggressiveness();
+  const baseStrength = SNAP_AGGRESSIVENESS[aggressiveness].resizeSnapStrength;
   return clampNumber(
-    getSettingValue("BlockSpace.Snap.ResizeStrength", DEFAULT_RESIZE_SNAP_STRENGTH),
+    getSettingValue("BlockSpace.Snap.ResizeStrength", baseStrength),
     0.1,
     5,
-    DEFAULT_RESIZE_SNAP_STRENGTH
+    baseStrength
   );
 }
 
 export function getMoveYSnapStrength() {
+  const aggressiveness = getSnapAggressiveness();
+  const baseStrength = SNAP_AGGRESSIVENESS[aggressiveness].moveYSnapStrength;
   return clampNumber(
     getSettingValue(
       "BlockSpace.Snap.MoveYSnapStrength",
-      getSettingValue("BlockSpace.Snap.MoveStrength", DEFAULT_MOVE_Y_SNAP_STRENGTH)
+      getSettingValue("BlockSpace.Snap.MoveStrength", baseStrength)
     ),
     0.1,
     8,
-    DEFAULT_MOVE_Y_SNAP_STRENGTH
+    baseStrength
   );
+}
+
+export function getExitThresholdMultiplier() {
+  const aggressiveness = getSnapAggressiveness();
+  return SNAP_AGGRESSIVENESS[aggressiveness].exitMultiplier;
 }
 
 export function getDimensionTolerancePx() {
@@ -717,9 +755,11 @@ if (typeof window !== "undefined") {
     getVSnapMargin,
     getSnapThreshold,
     isSnappingEnabled,
+    getSnapAggressiveness,
     getMoveSnapStrength,
     getResizeSnapStrength,
     getMoveYSnapStrength,
+    getExitThresholdMultiplier,
     getDimensionTolerancePx,
     getHighlightEnabled,
     getHighlightColor,

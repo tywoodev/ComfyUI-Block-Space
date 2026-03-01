@@ -64,12 +64,21 @@ Once snapped, the node stays snapped until you drag far enough away:
 | Setting | What It Does | Default |
 |---------|--------------|---------|
 | **Enable Snapping** | Turn snapping on/off | On |
+| **Snap Aggressiveness** | How strongly nodes snap (Low/Medium/High) | Medium |
 | **Snap Sensitivity** | How close you need to be (in pixels) | 10px |
 | **Horizontal Snap Margin** | Preferred gap when stacking side-by-side | 60px |
 | **Vertical Snap Margin** | Preferred gap when stacking vertically | 60px |
 | **Show Alignment Guides** | Display purple guide lines | On |
 | **Guide Line Color** | Choose your preferred color | Comfy Blue |
 | **Snap Pulse Duration** | How long the green border glow lasts | 160ms |
+
+#### Snap Aggressiveness Levels
+
+| Level | Move Y | Resize | Exit Multiplier | Feel |
+|-------|--------|--------|-----------------|------|
+| **Low** | 1.0x | 1.0x | 2.5x | Easy free movement, minimal snapping |
+| **Medium** | 1.5x | 1.5x | 2.0x | Balanced snapping (default) |
+| **High** | 2.4x | 2.4x | 1.5x | Strong snapping, more "sticky" feel |
 
 ---
 
@@ -86,9 +95,31 @@ The snapping system operates in three phases:
 ### Constants
 
 ```javascript
+// Snap aggressiveness presets (Low/Medium/High)
+SNAP_AGGRESSIVENESS = {
+  LOW: {
+    moveSnapStrength: 0.8,
+    moveYSnapStrength: 1.0,
+    resizeSnapStrength: 1.0,
+    exitMultiplier: 2.5
+  },
+  MEDIUM: {
+    moveSnapStrength: 1.0,
+    moveYSnapStrength: 1.5,
+    resizeSnapStrength: 1.5,
+    exitMultiplier: 2.0
+  },
+  HIGH: {
+    moveSnapStrength: 1.0,
+    moveYSnapStrength: 2.4,
+    resizeSnapStrength: 2.4,
+    exitMultiplier: 1.5
+  }
+}
+
 // Core thresholds
 SNAP_THRESHOLD = 10                           // Base snap distance (pixels)
-EXIT_THRESHOLD_MULTIPLIER = 1.5               // Exit snap multiplier
+EXIT_THRESHOLD_MULTIPLIER = 1.5               // Legacy fallback
 SNAP_MOUSEUP_GRACE_MS = 220                   // Grace period after mouse up
 SNAP_MOUSEUP_TOLERANCE_MULTIPLIER = 1.8       // Persistence tolerance
 
@@ -313,6 +344,7 @@ Memory is invalidated when:
 | `BlockSpace.ConnectorStyle` | combo | "hybrid" | Wire routing style |
 | `BlockSpace.ConnectorStubLength` | slider | 34 | Wire stub length (px) |
 | `BlockSpace.Snap.Enabled` | boolean | true | Master snapping toggle |
+| `BlockSpace.Snap.Aggressiveness` | combo | "Medium" | Snap strength: Low/Medium/High |
 | `BlockSpace.Snap.Sensitivity` | slider | 10 | Base snap distance (px) |
 | `BlockSpace.Snap.HMarginPx` | slider | 60 | Horizontal stack margin (px) |
 | `BlockSpace.Snap.VMarginPx` | slider | 60 | Vertical stack margin (px) |

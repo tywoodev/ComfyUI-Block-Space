@@ -79,6 +79,15 @@ function registerBlockSpaceSettings() {
   });
 
   addSetting({
+    id: "BlockSpace.Snap.Aggressiveness",
+    name: "Snap Aggressiveness",
+    type: "combo",
+    options: ["Low", "Medium", "High"],
+    defaultValue: "Medium",
+    tooltip: "Controls how strongly nodes snap to alignment. Low = easier free movement, High = stronger snapping.",
+  });
+
+  addSetting({
     id: "BlockSpace.Snap.Sensitivity",
     name: "Snap Sensitivity (px)",
     type: "slider",

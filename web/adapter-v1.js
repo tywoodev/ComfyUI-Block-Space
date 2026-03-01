@@ -24,6 +24,7 @@ import {
   getMoveSnapStrength,
   getResizeSnapStrength,
   getMoveYSnapStrength,
+  getExitThresholdMultiplier,
   getDimensionTolerancePx,
   getHighlightEnabled,
   getHighlightColor,
@@ -39,7 +40,6 @@ import {
 // ============================================================================
 
 const SNAP_THRESHOLD = 10;
-const EXIT_THRESHOLD_MULTIPLIER = 1.5;
 const SNAP_MOUSEUP_GRACE_MS = 220;
 const SNAP_MOUSEUP_TOLERANCE_MULTIPLIER = 1.8;
 const DIMENSION_ASSOC_LAYER_ID = "block-space-dimension-association-layer";
@@ -268,7 +268,7 @@ function applyResizeSnapping(canvas, resizingNode) {
   if (!bounds) return false;
 
   const thresholdCanvas = (SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(canvas))) * getResizeSnapStrength();
-  const exitThresholdCanvas = thresholdCanvas * EXIT_THRESHOLD_MULTIPLIER;
+  const exitThresholdCanvas = thresholdCanvas * getExitThresholdMultiplier();
   const currentWidth = bounds.right - bounds.left;
   const currentHeight = bounds.bottom - bounds.top;
   const currentRight = bounds.right;
@@ -1572,7 +1572,7 @@ function initNodeSnappingPatches() {
     const hSnapMargin = getHSnapMargin();
     const vSnapMargin = getVSnapMargin();
     const baseMoveThreshold = SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(this));
-    const exitThresholdCanvas = baseMoveThreshold * EXIT_THRESHOLD_MULTIPLIER;
+    const exitThresholdCanvas = baseMoveThreshold * getExitThresholdMultiplier();
     const thresholdCanvasX = baseMoveThreshold * getMoveSnapStrength();
     const thresholdCanvasY = baseMoveThreshold * getMoveSnapStrength();
 
