@@ -14,6 +14,7 @@ import {
   pickNearestMoveCluster,
   pickDirectionalCluster,
   getRaycastNeighbors,
+  getRaycastNeighborsMulti,
   computeWinningXCandidate,
   getSettingValue,
   getHSnapMargin,
@@ -102,7 +103,8 @@ function ensureResizeDimensionMemory(canvas, resizingNode) {
   const activeBounds = getNodeBounds(resizingNode);
   if (!activeBounds) return null;
 
-  const padding = 1500;
+  // Only consider nodes within reasonable distance for dimension snapping
+  const padding = 300;
   const targetNodes = [];
   for (const n of allNodes) {
     if (!n || n === resizingNode || n.constructor?.name === "LGraphGroup") continue;
@@ -153,7 +155,7 @@ function ensureMoveYPointMemory(canvas, activeNode, vSnapMargin) {
   if (!activeBounds) return null;
 
   const selectedNodesMap = canvas.selected_nodes || null;
-  const padding = 1500;
+  const padding = 400;
   const points = [];
   const activeHeight = activeBounds.bottom - activeBounds.top;
 
@@ -187,7 +189,7 @@ function ensureMoveXPointMemory(canvas, activeNode, hSnapMargin) {
   if (!activeBounds) return null;
 
   const selectedNodesMap = canvas.selected_nodes || null;
-  const padding = 1500;
+  const padding = 400;
   const points = [];
   const activeWidth = activeBounds.right - activeBounds.left;
 
@@ -281,7 +283,9 @@ function applyResizeSnapping(canvas, resizingNode) {
     bestXDelta = Math.abs(currentWidth - widthWinner.center);
     bestXWidth = widthWinner.center;
     bestXMode = "dimension_match";
-    bestXNodes = widthWinner.members.map(m => m.node).filter(n => !!n);
+    // Only show guide for closest node, not all cluster members
+    const closest = widthWinner.members.slice().sort((a, b) => Math.abs(a.value - widthWinner.center) - Math.abs(b.value - widthWinner.center))[0];
+    if (closest?.node) bestXNodes = [closest.node];
   }
   if (rightEdgeWinner) {
     const edgeDelta = Math.abs(currentRight - rightEdgeWinner.center);
@@ -289,7 +293,9 @@ function applyResizeSnapping(canvas, resizingNode) {
       bestXDelta = edgeDelta;
       bestXWidth = rightEdgeWinner.center - bounds.left;
       bestXMode = "edge_align_right";
-      bestXNodes = rightEdgeWinner.members.map(m => m.node).filter(n => !!n);
+      // Only show guide for closest node, not all cluster members
+      const closest = rightEdgeWinner.members.slice().sort((a, b) => Math.abs(a.value - rightEdgeWinner.center) - Math.abs(b.value - rightEdgeWinner.center))[0];
+      if (closest?.node) bestXNodes = [closest.node];
     }
   }
 
@@ -312,7 +318,9 @@ function applyResizeSnapping(canvas, resizingNode) {
     bestYDelta = Math.abs(currentHeight - heightWinner.center);
     bestYHeight = heightWinner.center;
     bestYMode = "dimension_match";
-    bestYNodes = heightWinner.members.map(m => m.node).filter(n => !!n);
+    // Only show guide for closest node, not all cluster members
+    const closest = heightWinner.members.slice().sort((a, b) => Math.abs(a.value - heightWinner.center) - Math.abs(b.value - heightWinner.center))[0];
+    if (closest?.node) bestYNodes = [closest.node];
   }
   if (bottomEdgeWinner) {
     const edgeDeltaY = Math.abs(currentBottom - bottomEdgeWinner.center);
@@ -320,7 +328,9 @@ function applyResizeSnapping(canvas, resizingNode) {
       bestYDelta = edgeDeltaY;
       bestYHeight = bottomEdgeWinner.center - bounds.top;
       bestYMode = "edge_align_bottom";
-      bestYNodes = bottomEdgeWinner.members.map(m => m.node).filter(n => !!n);
+      // Only show guide for closest node, not all cluster members
+      const closest = bottomEdgeWinner.members.slice().sort((a, b) => Math.abs(a.value - bottomEdgeWinner.center) - Math.abs(b.value - bottomEdgeWinner.center))[0];
+      if (closest?.node) bestYNodes = [closest.node];
     }
   }
 
@@ -491,16 +501,26 @@ function renderDimensionAssociationHighlights(canvas, status) {
   for (const n of xNodes) trackNode(n, "width");
   for (const n of yNodes) trackNode(n, "height");
 
+  const titleH = Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24;
+
   for (const key in nodeMap) {
     if (!Object.prototype.hasOwnProperty.call(nodeMap, key)) continue;
     const item = nodeMap[key];
     const bounds = getNodeBounds(item.node);
     if (!bounds) continue;
-    const topLeft = graphToClient(canvas, bounds.left, bounds.top);
-    if (!topLeft) continue;
-    const left = topLeft.x, top = topLeft.y;
+
+    // For vertical guides (left/right), use full bounds
+    const topLeftFull = graphToClient(canvas, bounds.left, bounds.top);
+    if (!topLeftFull) continue;
+    const left = topLeftFull.x;
     const width = Math.max(0, (bounds.right - bounds.left) * scale);
-    const height = Math.max(0, (bounds.bottom - bounds.top) * scale);
+    const fullHeight = Math.max(0, (bounds.bottom - bounds.top) * scale);
+
+    // For horizontal guides (top/bottom), offset by title height to align with content edges
+    const contentTopY = bounds.top - titleH;
+    const contentBottomY = bounds.bottom - titleH;
+    const contentTop = graphToClient(canvas, bounds.left, contentTopY).y;
+    const contentBottom = graphToClient(canvas, bounds.left, contentBottomY).y;
 
     if (item.width) {
       if (status.axis === "move") {
@@ -508,15 +528,17 @@ function renderDimensionAssociationHighlights(canvas, status) {
         const anchorCanvasX = xMode.includes("right") ? bounds.right : (xMode.includes("center") ? bounds.left + (bounds.right - bounds.left) / 2 : bounds.left);
         const lineXClient = graphToClient(canvas, anchorCanvasX, bounds.top).x;
         if (xMode.includes("right")) lineXClient -= borderW;
-        appendLine(lineXClient, top, borderW, height, guideColor);
+        appendLine(lineXClient, topLeftFull.y, borderW, fullHeight, guideColor);
       } else {
-        appendLine(left, top, borderW, height, guideColor);
-        appendLine(left + width - borderW, top, borderW, height, guideColor);
+        appendLine(left, topLeftFull.y, borderW, fullHeight, guideColor);
+        appendLine(left + width - borderW, topLeftFull.y, borderW, fullHeight, guideColor);
       }
     }
     if (item.height) {
-      appendLine(left, top, width, borderW, guideColor);
-      appendLine(left, top + height - borderW, width, borderW, guideColor);
+      // Top edge guide - at content top (below title bar)
+      appendLine(left, contentTop, width, borderW, guideColor);
+      // Bottom edge guide - exactly at node bottom edge
+      appendLine(left, contentBottom, width, borderW, guideColor);
     }
   }
 }
@@ -1515,6 +1537,77 @@ function initNodeSnappingPatches() {
       yDidSnapMove = true;
     }
 
+    // Raycasting snapping - align to closest 2 neighbors in any direction
+    const raycastXWinners = [];
+    const raycastYWinners = [];
+    if (!xDidSnapMove || !yDidSnapMove) {
+      const raycastNeighbors = getRaycastNeighborsMulti(
+        activeNode,
+        activeBounds,
+        nodes,
+        { maxSearchDistance: 1000, count: 2, selectedNodesMap }
+      );
+
+      for (const neighbor of raycastNeighbors) {
+        if (!neighbor || !neighbor.bounds) continue;
+
+        const nBounds = neighbor.bounds;
+        const threshold = Math.min(currentThresholdX, currentThresholdY) * 1.5;
+
+        // X-axis raycast snapping (if not already snapped on X)
+        if (!xDidSnapMove && neighbor.axis === "x") {
+          const activeWidth = activeBounds.right - activeBounds.left;
+          let targetX = null;
+
+          if (neighbor.direction === "left") {
+            // Align right edge of active to left edge of neighbor (with margin)
+            targetX = nBounds.left - hSnapMargin - activeWidth;
+            if (Math.abs(activeBounds.left - targetX) <= threshold) {
+              activeNode.pos[0] = targetX;
+              didSnap = true;
+              xDidSnapMove = true;
+              raycastXWinners.push(neighbor.node);
+            }
+          } else if (neighbor.direction === "right") {
+            // Align left edge of active to right edge of neighbor (with margin)
+            targetX = nBounds.right + hSnapMargin;
+            if (Math.abs(activeBounds.left - targetX) <= threshold) {
+              activeNode.pos[0] = targetX;
+              didSnap = true;
+              xDidSnapMove = true;
+              raycastXWinners.push(neighbor.node);
+            }
+          }
+        }
+
+        // Y-axis raycast snapping (if not already snapped on Y)
+        if (!yDidSnapMove && neighbor.axis === "y") {
+          const activeHeight = activeBounds.bottom - activeBounds.top;
+          let targetY = null;
+
+          if (neighbor.direction === "above") {
+            // Align bottom edge of active to top edge of neighbor (with margin)
+            targetY = nBounds.top - vSnapMargin - activeHeight;
+            if (Math.abs(activeBounds.top - targetY) <= threshold) {
+              activeNode.pos[1] = targetY;
+              didSnap = true;
+              yDidSnapMove = true;
+              raycastYWinners.push(neighbor.node);
+            }
+          } else if (neighbor.direction === "below") {
+            // Align top edge of active to bottom edge of neighbor (with margin)
+            targetY = nBounds.bottom + vSnapMargin;
+            if (Math.abs(activeBounds.top - targetY) <= threshold) {
+              activeNode.pos[1] = targetY;
+              didSnap = true;
+              yDidSnapMove = true;
+              raycastYWinners.push(neighbor.node);
+            }
+          }
+        }
+      }
+    }
+
     if (dragSnapshot?.anchor === activeNode) {
       const totalMoveX = activeNode.pos[0] - dragSnapshot.anchorX;
       const totalMoveY = activeNode.pos[1] - dragSnapshot.anchorY;
@@ -1526,25 +1619,30 @@ function initNodeSnappingPatches() {
       }
     }
 
-    // Build winner node lists for guide rendering
+    // Build winner node lists for guide rendering (only closest, not all cluster members)
     const xWinnerNodes = [];
-    if (xWinner?.members) {
-      const seen = new Set();
-      for (const m of xWinner.members) {
-        if (m.node?.id && !seen.has(m.node.id)) {
-          seen.add(m.node.id);
-          xWinnerNodes.push(m.node);
-        }
+    if (xWinner?.members?.length) {
+      // Find closest member by value distance from cluster center
+      const closest = xWinner.members.slice().sort((a, b) => Math.abs(a.value - xWinner.center) - Math.abs(b.value - xWinner.center))[0];
+      if (closest?.node) xWinnerNodes.push(closest.node);
+    }
+    // Add raycast X winners
+    for (const node of raycastXWinners) {
+      if (node?.id && !xWinnerNodes.some(n => n.id === node.id)) {
+        xWinnerNodes.push(node);
       }
     }
+
     const yWinnerNodes = [];
-    if (yWinner?.members) {
-      const seen = new Set();
-      for (const m of yWinner.members) {
-        if (m.node?.id && !seen.has(m.node.id)) {
-          seen.add(m.node.id);
-          yWinnerNodes.push(m.node);
-        }
+    if (yWinner?.members?.length) {
+      // Find closest member by value distance from cluster center
+      const closest = yWinner.members.slice().sort((a, b) => Math.abs(a.value - yWinner.center) - Math.abs(b.value - yWinner.center))[0];
+      if (closest?.node) yWinnerNodes.push(closest.node);
+    }
+    // Add raycast Y winners
+    for (const node of raycastYWinners) {
+      if (node?.id && !yWinnerNodes.some(n => n.id === node.id)) {
+        yWinnerNodes.push(node);
       }
     }
 

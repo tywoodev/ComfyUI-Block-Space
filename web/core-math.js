@@ -563,6 +563,77 @@ export function getRaycastNeighbors(
   return valid[0];
 }
 
+/**
+ * Get multiple raycast neighbors - finds the closest N targets in all directions.
+ * This is used for the always-on raycasting snapping feature.
+ * @param {Object} activeNode - The node being dragged
+ * @param {Object} activeBounds - Bounds of the active node
+ * @param {Array} allNodes - All nodes in the graph
+ * @param {Object} options - Search options
+ * @param {number} options.maxSearchDistance - Maximum distance to search
+ * @param {number} options.count - Number of neighbors to return (default 2)
+ * @param {Object} options.selectedNodesMap - Map of selected node IDs to exclude
+ * @returns {Array} Array of closest targets, sorted by distance
+ */
+export function getRaycastNeighborsMulti(
+  activeNode,
+  activeBounds,
+  allNodes,
+  options
+) {
+  const {
+    maxSearchDistance = 2000,
+    count = 2,
+    selectedNodesMap = null,
+  } = options || {};
+
+  // Search in all 4 directions
+  const directions = [
+    { axis: "x", direction: "left" },
+    { axis: "x", direction: "right" },
+    { axis: "y", direction: "above" },
+    { axis: "y", direction: "below" },
+  ];
+
+  let allValid = [];
+
+  for (const { axis, direction } of directions) {
+    const targets = collectValidTargetsForAxis(
+      activeNode,
+      activeBounds,
+      allNodes,
+      maxSearchDistance,
+      axis,
+      direction,
+      false,
+      selectedNodesMap
+    );
+    allValid = allValid.concat(targets);
+  }
+
+  if (!allValid.length) {
+    return [];
+  }
+
+  // Sort by distance and return top N
+  allValid.sort(function (a, b) {
+    return a.distance - b.distance;
+  });
+
+  // Return unique nodes (in case a node appears in multiple directions)
+  const seen = new Set();
+  const result = [];
+  for (const target of allValid) {
+    if (target.node?.id && !seen.has(target.node.id)) {
+      seen.add(target.node.id);
+      result.push(target);
+      if (result.length >= count) break;
+    }
+  }
+
+  return result;
+}
+
 // ============================================================================
 // Additional Geometry Helpers
 // ============================================================================
@@ -668,6 +739,7 @@ if (typeof window !== "undefined") {
     // Raycasting
     collectValidTargetsForAxis,
     getRaycastNeighbors,
+    getRaycastNeighborsMulti,
     computeWinningXCandidate,
   };
 }
