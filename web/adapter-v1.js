@@ -1697,7 +1697,7 @@ function initSmartSizingPatches() {
     const textMinWidth = Math.max(slotTextWidth, titleWidth + PORT_PADDING, MIN_NODE_WIDTH);
 
     const widgetBounds = computeWidgetBounds(this, textMinWidth);
-    const minWidth = Math.max(textMinWidth, widgetBounds.width);
+    let minWidth = Math.max(textMinWidth, widgetBounds.width);
 
     const slotStartY = this.constructor.slot_start_y || 0;
     const slotHeight = window.LiteGraph?.NODE_SLOT_HEIGHT || 20;
