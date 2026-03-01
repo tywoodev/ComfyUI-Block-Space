@@ -211,46 +211,50 @@ async function loadScript(url, options = {}) {
   });
 }
 
-async function loadBlockSpaceAdapter(baseUrl) {
+function loadBlockSpaceAdapter(baseUrl) {
   const indexUrl = new URL("../../index.js", baseUrl).toString() + "?v=" + ASSET_VERSION;
   
-  await loadScript(indexUrl, { type: "module" });
-  
-  if (window.BlockSpaceInit) {
-    await window.BlockSpaceInit();
-  } else {
-    await new Promise(resolve => setTimeout(resolve, 100));
-    if (window.BlockSpaceInit) {
-      await window.BlockSpaceInit();
-    } else {
-      throw new Error("BlockSpaceInit not available after loading index.js");
-    }
-  }
+  // Non-blocking script load
+  const script = document.createElement("script");
+  script.src = indexUrl;
+  script.type = "module";
+  script.async = true; // Non-blocking
+  script.onload = () => {
+    console.log("[BlockSpace] Module loaded, adapter will auto-initialize");
+  };
+  script.onerror = () => {
+    console.error("[BlockSpace] Failed to load module. Try hard refresh (Ctrl+F5)");
+  };
+  document.head.appendChild(script);
 }
 
 app.registerExtension({
   name: "Block Space",
-  async setup() {
-    await loadScript(new URL("../../better-nodes-settings.js", import.meta.url).toString() + "?v=" + ASSET_VERSION);
+  setup() {
+    // Load settings script (non-blocking)
+    const settingsUrl = new URL("../../better-nodes-settings.js", import.meta.url).toString() + "?v=" + ASSET_VERSION;
+    const settingsScript = document.createElement("script");
+    settingsScript.src = settingsUrl;
+    settingsScript.async = true;
+    settingsScript.onload = () => {
+      if (window.BetterNodesSettings && typeof window.BetterNodesSettings.__setComfyUIRuntime === "function") {
+        window.BetterNodesSettings.__setComfyUIRuntime(true);
+      }
+    };
+    document.head.appendChild(settingsScript);
 
-    if (window.BetterNodesSettings && typeof window.BetterNodesSettings.__setComfyUIRuntime === "function") {
-      window.BetterNodesSettings.__setComfyUIRuntime(true);
-    }
+    // Load adapter (non-blocking, auto-detects V1/V2)
+    loadBlockSpaceAdapter(import.meta.url);
 
-    try {
-      await loadBlockSpaceAdapter(import.meta.url);
-      console.log("[BlockSpace] Adapter loaded successfully");
-    } catch (error) {
-      console.error("[BlockSpace] Failed to load adapter:", error);
-      console.error("[BlockSpace] Please try hard refreshing (Ctrl+F5) or see docs/RECOVERY.md");
-    }
-
-    if (
-      window.BlockSpaceNodeSnap &&
-      typeof window.BlockSpaceNodeSnap.resetPersistedHighlightArtifacts === "function"
-    ) {
-      window.BlockSpaceNodeSnap.resetPersistedHighlightArtifacts(app && app.canvas);
-    }
+    // Reset any persisted artifacts from previous sessions
+    setTimeout(() => {
+      if (
+        window.BlockSpaceNodeSnap &&
+        typeof window.BlockSpaceNodeSnap.resetPersistedHighlightArtifacts === "function"
+      ) {
+        window.BlockSpaceNodeSnap.resetPersistedHighlightArtifacts(app && app.canvas);
+      }
+    }, 1000);
 
     registerBlockSpaceSettings();
     injectSettingsIcon();
