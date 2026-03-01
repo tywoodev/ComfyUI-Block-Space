@@ -9,24 +9,21 @@
 // Constants (mirroring node-snapping.js defaults)
 // ============================================================================
 
-// Snap aggressiveness presets
+// Snap aggressiveness presets (keys match setting values)
 const SNAP_AGGRESSIVENESS = {
-  LOW: {
-    moveSnapStrength: 0.8,
-    moveYSnapStrength: 1.0,
-    resizeSnapStrength: 1.0,
-    exitMultiplier: 2.5
+  "Low": {
+    moveSnapStrength: 0.2,   // Used for both X and Y axis
+    resizeSnapStrength: 0.3,
+    exitMultiplier: 3.5
   },
-  MEDIUM: {
-    moveSnapStrength: 1.0,
-    moveYSnapStrength: 1.5,
-    resizeSnapStrength: 1.5,
+  "Medium": {
+    moveSnapStrength: 0.8,   // Used for both X and Y axis
+    resizeSnapStrength: 1.3,
     exitMultiplier: 2.0
   },
-  HIGH: {
-    moveSnapStrength: 1.0,
-    moveYSnapStrength: 2.4,
-    resizeSnapStrength: 2.4,
+  "High": {
+    moveSnapStrength: 1.0,   // Used for both X and Y axis
+    resizeSnapStrength: 1.8,
     exitMultiplier: 1.5
   }
 };
@@ -36,7 +33,6 @@ const EXIT_THRESHOLD_MULTIPLIER = 1.5; // Legacy fallback
 const DEFAULT_H_SNAP_MARGIN = 60;
 const DEFAULT_V_SNAP_MARGIN = 40;
 const DEFAULT_MOVE_SNAP_STRENGTH = 1.0;
-const DEFAULT_MOVE_Y_SNAP_STRENGTH = 1.5; // Reduced from 2.4
 const DEFAULT_RESIZE_SNAP_STRENGTH = 1.5; // Reduced from 2.4
 const DEFAULT_DIMENSION_TOLERANCE_PX = 12;
 const DEFAULT_HIGHLIGHT_ENABLED = true;
@@ -159,17 +155,8 @@ export function getResizeSnapStrength() {
 }
 
 export function getMoveYSnapStrength() {
-  const aggressiveness = getSnapAggressiveness();
-  const baseStrength = SNAP_AGGRESSIVENESS[aggressiveness].moveYSnapStrength;
-  return clampNumber(
-    getSettingValue(
-      "BlockSpace.Snap.MoveYSnapStrength",
-      getSettingValue("BlockSpace.Snap.MoveStrength", baseStrength)
-    ),
-    0.1,
-    8,
-    baseStrength
-  );
+  // Y-axis now uses same strength as X-axis for parity
+  return getMoveSnapStrength();
 }
 
 export function getExitThresholdMultiplier() {
@@ -322,8 +309,8 @@ export function buildDimensionClusters(samples, tolerancePx) {
       if (entry && typeof entry === "object") {
         const n = Number(entry.value);
         if (isFinite(n)) {
-          // Preserve additional fields like 'type' and 'edge' for guide rendering
-          return { value: n, node: entry.node || null, type: entry.type, edge: entry.edge };
+          // Preserve additional fields like 'type' for guide rendering
+          return { value: n, node: entry.node || null, type: entry.type };
         }
         return null;
       }

@@ -126,12 +126,8 @@ function ensureResizeDimensionMemory(canvas, resizingNode) {
     const targetHeight = bounds.bottom - bounds.top;
     if (isFinite(targetWidth) && targetWidth > 0) widthSamples.push({ value: targetWidth, node });
     if (isFinite(targetHeight) && targetHeight > 0) heightSamples.push({ value: targetHeight, node });
-    // Track which edge type for guide rendering
-    rightEdgeSamples.push({ value: bounds.right, node, edge: 'right' });
-    rightEdgeSamples.push({ value: bounds.left, node, edge: 'left' });
-    rightEdgeSamples.push({ value: bounds.left - hSnapMargin, node, edge: 'left' });
-    bottomEdgeSamples.push({ value: bounds.bottom, node, edge: 'bottom' });
-    bottomEdgeSamples.push({ value: bounds.top, node, edge: 'top' });
+    rightEdgeSamples.push({ value: bounds.right, node }, { value: bounds.left, node }, { value: bounds.left - hSnapMargin, node });
+    bottomEdgeSamples.push({ value: bounds.bottom, node }, { value: bounds.top, node });
     bottomEdgeSamples.push({ value: bounds.top - vSnapMargin, node, edge: 'top' });
   }
 
@@ -284,13 +280,10 @@ function applyResizeSnapping(canvas, resizingNode) {
   let didSnap = false;
   let bestXWidth = null, bestXDelta = Infinity, bestXMode = null, bestXNodes = [];
 
-  let xResizeEdge = 'both'; // 'left', 'right', 'both', or 'none'
-
   if (widthWinner) {
     bestXDelta = Math.abs(currentWidth - widthWinner.center);
     bestXWidth = widthWinner.center;
     bestXMode = "dimension_match";
-    xResizeEdge = 'both'; // Dimension match shows both edges
     // Only show guide for closest node by spatial distance to active node
     const closest = widthWinner.members.slice().sort((a, b) => {
       const boundsA = a.node ? getNodeBounds(a.node) : null;
@@ -309,11 +302,8 @@ function applyResizeSnapping(canvas, resizingNode) {
       bestXDelta = edgeDelta;
       bestXWidth = rightEdgeWinner.center - bounds.left;
       bestXMode = "edge_align_right";
-      // Determine which specific edge was matched (left or right of target)
-      const closest = rightEdgeWinner.members.slice().sort((a, b) => Math.abs(a.value - rightEdgeWinner.center) - Math.abs(b.value - rightEdgeWinner.center))[0];
-      xResizeEdge = closest?.edge || 'right';
       // Only show guide for closest node by spatial distance to active node
-      const closestByDist = rightEdgeWinner.members.slice().sort((a, b) => {
+      const closest = rightEdgeWinner.members.slice().sort((a, b) => {
         const boundsA = a.node ? getNodeBounds(a.node) : null;
         const boundsB = b.node ? getNodeBounds(b.node) : null;
         if (!boundsA) return 1;
@@ -322,7 +312,7 @@ function applyResizeSnapping(canvas, resizingNode) {
         const distB = Math.hypot(boundsB.centerX - bounds.centerX, boundsB.centerY - bounds.centerY);
         return distA - distB;
       })[0];
-      if (closestByDist?.node) bestXNodes = [closestByDist.node];
+      if (closest?.node) bestXNodes = [closest.node];
     }
   }
 
@@ -339,14 +329,12 @@ function applyResizeSnapping(canvas, resizingNode) {
   }
 
   let bestYHeight = null, bestYDelta = Infinity, bestYMode = null, bestYNodes = [];
-  let yResizeEdge = 'both'; // 'top', 'bottom', 'both', or 'none'
   const titleH = Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24;
 
   if (heightWinner) {
     bestYDelta = Math.abs(currentHeight - heightWinner.center);
     bestYHeight = heightWinner.center;
     bestYMode = "dimension_match";
-    yResizeEdge = 'both'; // Dimension match shows both edges
     // Only show guide for closest node by spatial distance to active node
     const closest = heightWinner.members.slice().sort((a, b) => {
       const boundsA = a.node ? getNodeBounds(a.node) : null;
@@ -365,11 +353,8 @@ function applyResizeSnapping(canvas, resizingNode) {
       bestYDelta = edgeDeltaY;
       bestYHeight = bottomEdgeWinner.center - bounds.top;
       bestYMode = "edge_align_bottom";
-      // Determine which specific edge was matched (top or bottom of target)
-      const closest = bottomEdgeWinner.members.slice().sort((a, b) => Math.abs(a.value - bottomEdgeWinner.center) - Math.abs(b.value - bottomEdgeWinner.center))[0];
-      yResizeEdge = closest?.edge || 'bottom';
       // Only show guide for closest node by spatial distance to active node
-      const closestByDist = bottomEdgeWinner.members.slice().sort((a, b) => {
+      const closest = bottomEdgeWinner.members.slice().sort((a, b) => {
         const boundsA = a.node ? getNodeBounds(a.node) : null;
         const boundsB = b.node ? getNodeBounds(b.node) : null;
         if (!boundsA) return 1;
@@ -378,7 +363,7 @@ function applyResizeSnapping(canvas, resizingNode) {
         const distB = Math.hypot(boundsB.centerX - bounds.centerX, boundsB.centerY - bounds.centerY);
         return distA - distB;
       })[0];
-      if (closestByDist?.node) bestYNodes = [closestByDist.node];
+      if (closest?.node) bestYNodes = [closest.node];
     }
   }
 
@@ -404,8 +389,6 @@ function applyResizeSnapping(canvas, resizingNode) {
     yDidSnap: yDidSnap,
     xWinnerNodes: bestXNodes,
     yWinnerNodes: bestYNodes,
-    xResizeEdge: xResizeEdge,
-    yResizeEdge: yResizeEdge,
     activeLeft: bounds.left,
     activeTop: bounds.top,
     xTarget: xDidSnap ? bestXWidth : null,
@@ -589,27 +572,15 @@ function renderDimensionAssociationHighlights(canvas, status) {
         if (xSnapEdge === 'right') lineXClient -= borderW;
         appendLine(lineXClient, contentTop, borderW, contentHeight, guideColor);
       } else {
-        // For resize, show only the edge that was snapped to
-        const xResizeEdge = status.xResizeEdge || 'both';
-        if (xResizeEdge === 'left' || xResizeEdge === 'both') {
-          appendLine(left, contentTop, borderW, contentHeight, guideColor);
-        }
-        if (xResizeEdge === 'right' || xResizeEdge === 'both') {
-          appendLine(left + width - borderW, contentTop, borderW, contentHeight, guideColor);
-        }
+        appendLine(left, contentTop, borderW, contentHeight, guideColor);
+        appendLine(left + width - borderW, contentTop, borderW, contentHeight, guideColor);
       }
     }
     if (item.height) {
-      // For resize, show only the edge that was snapped to
-      const yResizeEdge = status.yResizeEdge || 'both';
-      if (yResizeEdge === 'top' || yResizeEdge === 'both') {
-        // Top edge guide - at content top (below title bar)
-        appendLine(left, contentTop, width, borderW, guideColor);
-      }
-      if (yResizeEdge === 'bottom' || yResizeEdge === 'both') {
-        // Bottom edge guide - exactly at node bottom edge
-        appendLine(left, contentBottom, width, borderW, guideColor);
-      }
+      // Top edge guide - at content top (below title bar)
+      appendLine(left, contentTop, width, borderW, guideColor);
+      // Bottom edge guide - exactly at node bottom edge
+      appendLine(left, contentBottom, width, borderW, guideColor);
     }
   }
 }
