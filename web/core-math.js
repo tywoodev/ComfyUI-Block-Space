@@ -284,7 +284,8 @@ export function buildDimensionClusters(samples, tolerancePx) {
       if (entry && typeof entry === "object") {
         const n = Number(entry.value);
         if (isFinite(n)) {
-          return { value: n, node: entry.node || null };
+          // Preserve additional fields like 'type' and 'edge' for guide rendering
+          return { value: n, node: entry.node || null, type: entry.type, edge: entry.edge };
         }
         return null;
       }

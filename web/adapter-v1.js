@@ -126,8 +126,13 @@ function ensureResizeDimensionMemory(canvas, resizingNode) {
     const targetHeight = bounds.bottom - bounds.top;
     if (isFinite(targetWidth) && targetWidth > 0) widthSamples.push({ value: targetWidth, node });
     if (isFinite(targetHeight) && targetHeight > 0) heightSamples.push({ value: targetHeight, node });
-    rightEdgeSamples.push({ value: bounds.right, node }, { value: bounds.left, node }, { value: bounds.left - hSnapMargin, node });
-    bottomEdgeSamples.push({ value: bounds.bottom, node }, { value: bounds.top, node }, { value: bounds.top - vSnapMargin, node });
+    // Track which edge type for guide rendering
+    rightEdgeSamples.push({ value: bounds.right, node, edge: 'right' });
+    rightEdgeSamples.push({ value: bounds.left, node, edge: 'left' });
+    rightEdgeSamples.push({ value: bounds.left - hSnapMargin, node, edge: 'left' });
+    bottomEdgeSamples.push({ value: bounds.bottom, node, edge: 'bottom' });
+    bottomEdgeSamples.push({ value: bounds.top, node, edge: 'top' });
+    bottomEdgeSamples.push({ value: bounds.top - vSnapMargin, node, edge: 'top' });
   }
 
   const tolerancePx = getDimensionTolerancePx();
@@ -155,7 +160,7 @@ function ensureMoveYPointMemory(canvas, activeNode, vSnapMargin) {
   if (!activeBounds) return null;
 
   const selectedNodesMap = canvas.selected_nodes || null;
-  const padding = 400;
+  const padding = 2000;
   const points = [];
   const activeHeight = activeBounds.bottom - activeBounds.top;
 
@@ -189,7 +194,7 @@ function ensureMoveXPointMemory(canvas, activeNode, hSnapMargin) {
   if (!activeBounds) return null;
 
   const selectedNodesMap = canvas.selected_nodes || null;
-  const padding = 400;
+  const padding = 2000;
   const points = [];
   const activeWidth = activeBounds.right - activeBounds.left;
 
@@ -279,12 +284,23 @@ function applyResizeSnapping(canvas, resizingNode) {
   let didSnap = false;
   let bestXWidth = null, bestXDelta = Infinity, bestXMode = null, bestXNodes = [];
 
+  let xResizeEdge = 'both'; // 'left', 'right', 'both', or 'none'
+
   if (widthWinner) {
     bestXDelta = Math.abs(currentWidth - widthWinner.center);
     bestXWidth = widthWinner.center;
     bestXMode = "dimension_match";
-    // Only show guide for closest node, not all cluster members
-    const closest = widthWinner.members.slice().sort((a, b) => Math.abs(a.value - widthWinner.center) - Math.abs(b.value - widthWinner.center))[0];
+    xResizeEdge = 'both'; // Dimension match shows both edges
+    // Only show guide for closest node by spatial distance to active node
+    const closest = widthWinner.members.slice().sort((a, b) => {
+      const boundsA = a.node ? getNodeBounds(a.node) : null;
+      const boundsB = b.node ? getNodeBounds(b.node) : null;
+      if (!boundsA) return 1;
+      if (!boundsB) return -1;
+      const distA = Math.hypot(boundsA.centerX - bounds.centerX, boundsA.centerY - bounds.centerY);
+      const distB = Math.hypot(boundsB.centerX - bounds.centerX, boundsB.centerY - bounds.centerY);
+      return distA - distB;
+    })[0];
     if (closest?.node) bestXNodes = [closest.node];
   }
   if (rightEdgeWinner) {
@@ -293,9 +309,20 @@ function applyResizeSnapping(canvas, resizingNode) {
       bestXDelta = edgeDelta;
       bestXWidth = rightEdgeWinner.center - bounds.left;
       bestXMode = "edge_align_right";
-      // Only show guide for closest node, not all cluster members
+      // Determine which specific edge was matched (left or right of target)
       const closest = rightEdgeWinner.members.slice().sort((a, b) => Math.abs(a.value - rightEdgeWinner.center) - Math.abs(b.value - rightEdgeWinner.center))[0];
-      if (closest?.node) bestXNodes = [closest.node];
+      xResizeEdge = closest?.edge || 'right';
+      // Only show guide for closest node by spatial distance to active node
+      const closestByDist = rightEdgeWinner.members.slice().sort((a, b) => {
+        const boundsA = a.node ? getNodeBounds(a.node) : null;
+        const boundsB = b.node ? getNodeBounds(b.node) : null;
+        if (!boundsA) return 1;
+        if (!boundsB) return -1;
+        const distA = Math.hypot(boundsA.centerX - bounds.centerX, boundsA.centerY - bounds.centerY);
+        const distB = Math.hypot(boundsB.centerX - bounds.centerX, boundsB.centerY - bounds.centerY);
+        return distA - distB;
+      })[0];
+      if (closestByDist?.node) bestXNodes = [closestByDist.node];
     }
   }
 
@@ -312,14 +339,24 @@ function applyResizeSnapping(canvas, resizingNode) {
   }
 
   let bestYHeight = null, bestYDelta = Infinity, bestYMode = null, bestYNodes = [];
+  let yResizeEdge = 'both'; // 'top', 'bottom', 'both', or 'none'
   const titleH = Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24;
 
   if (heightWinner) {
     bestYDelta = Math.abs(currentHeight - heightWinner.center);
     bestYHeight = heightWinner.center;
     bestYMode = "dimension_match";
-    // Only show guide for closest node, not all cluster members
-    const closest = heightWinner.members.slice().sort((a, b) => Math.abs(a.value - heightWinner.center) - Math.abs(b.value - heightWinner.center))[0];
+    yResizeEdge = 'both'; // Dimension match shows both edges
+    // Only show guide for closest node by spatial distance to active node
+    const closest = heightWinner.members.slice().sort((a, b) => {
+      const boundsA = a.node ? getNodeBounds(a.node) : null;
+      const boundsB = b.node ? getNodeBounds(b.node) : null;
+      if (!boundsA) return 1;
+      if (!boundsB) return -1;
+      const distA = Math.hypot(boundsA.centerX - bounds.centerX, boundsA.centerY - bounds.centerY);
+      const distB = Math.hypot(boundsB.centerX - bounds.centerX, boundsB.centerY - bounds.centerY);
+      return distA - distB;
+    })[0];
     if (closest?.node) bestYNodes = [closest.node];
   }
   if (bottomEdgeWinner) {
@@ -328,9 +365,20 @@ function applyResizeSnapping(canvas, resizingNode) {
       bestYDelta = edgeDeltaY;
       bestYHeight = bottomEdgeWinner.center - bounds.top;
       bestYMode = "edge_align_bottom";
-      // Only show guide for closest node, not all cluster members
+      // Determine which specific edge was matched (top or bottom of target)
       const closest = bottomEdgeWinner.members.slice().sort((a, b) => Math.abs(a.value - bottomEdgeWinner.center) - Math.abs(b.value - bottomEdgeWinner.center))[0];
-      if (closest?.node) bestYNodes = [closest.node];
+      yResizeEdge = closest?.edge || 'bottom';
+      // Only show guide for closest node by spatial distance to active node
+      const closestByDist = bottomEdgeWinner.members.slice().sort((a, b) => {
+        const boundsA = a.node ? getNodeBounds(a.node) : null;
+        const boundsB = b.node ? getNodeBounds(b.node) : null;
+        if (!boundsA) return 1;
+        if (!boundsB) return -1;
+        const distA = Math.hypot(boundsA.centerX - bounds.centerX, boundsA.centerY - bounds.centerY);
+        const distB = Math.hypot(boundsB.centerX - bounds.centerX, boundsB.centerY - bounds.centerY);
+        return distA - distB;
+      })[0];
+      if (closestByDist?.node) bestYNodes = [closestByDist.node];
     }
   }
 
@@ -356,6 +404,8 @@ function applyResizeSnapping(canvas, resizingNode) {
     yDidSnap: yDidSnap,
     xWinnerNodes: bestXNodes,
     yWinnerNodes: bestYNodes,
+    xResizeEdge: xResizeEdge,
+    yResizeEdge: yResizeEdge,
     activeLeft: bounds.left,
     activeTop: bounds.top,
     xTarget: xDidSnap ? bestXWidth : null,
@@ -521,24 +571,45 @@ function renderDimensionAssociationHighlights(canvas, status) {
     const contentBottomY = bounds.bottom - titleH;
     const contentTop = graphToClient(canvas, bounds.left, contentTopY).y;
     const contentBottom = graphToClient(canvas, bounds.left, contentBottomY).y;
+    const contentHeight = contentBottom - contentTop;
 
     if (item.width) {
       if (status.axis === "move") {
-        const xMode = status.xMode || "";
-        const anchorCanvasX = xMode.includes("right") ? bounds.right : (xMode.includes("center") ? bounds.left + (bounds.right - bounds.left) / 2 : bounds.left);
-        const lineXClient = graphToClient(canvas, anchorCanvasX, bounds.top).x;
-        if (xMode.includes("right")) lineXClient -= borderW;
-        appendLine(lineXClient, topLeftFull.y, borderW, fullHeight, guideColor);
+        // For move snapping, show guide on the edge that was snapped to
+        const xSnapEdge = status.xSnapEdge || 'left';
+        let anchorCanvasX;
+        if (xSnapEdge === 'right') {
+          anchorCanvasX = bounds.right;
+        } else if (xSnapEdge === 'center') {
+          anchorCanvasX = bounds.left + (bounds.right - bounds.left) / 2;
+        } else {
+          anchorCanvasX = bounds.left;
+        }
+        let lineXClient = graphToClient(canvas, anchorCanvasX, bounds.top).x;
+        if (xSnapEdge === 'right') lineXClient -= borderW;
+        appendLine(lineXClient, contentTop, borderW, contentHeight, guideColor);
       } else {
-        appendLine(left, topLeftFull.y, borderW, fullHeight, guideColor);
-        appendLine(left + width - borderW, topLeftFull.y, borderW, fullHeight, guideColor);
+        // For resize, show only the edge that was snapped to
+        const xResizeEdge = status.xResizeEdge || 'both';
+        if (xResizeEdge === 'left' || xResizeEdge === 'both') {
+          appendLine(left, contentTop, borderW, contentHeight, guideColor);
+        }
+        if (xResizeEdge === 'right' || xResizeEdge === 'both') {
+          appendLine(left + width - borderW, contentTop, borderW, contentHeight, guideColor);
+        }
       }
     }
     if (item.height) {
-      // Top edge guide - at content top (below title bar)
-      appendLine(left, contentTop, width, borderW, guideColor);
-      // Bottom edge guide - exactly at node bottom edge
-      appendLine(left, contentBottom, width, borderW, guideColor);
+      // For resize, show only the edge that was snapped to
+      const yResizeEdge = status.yResizeEdge || 'both';
+      if (yResizeEdge === 'top' || yResizeEdge === 'both') {
+        // Top edge guide - at content top (below title bar)
+        appendLine(left, contentTop, width, borderW, guideColor);
+      }
+      if (yResizeEdge === 'bottom' || yResizeEdge === 'both') {
+        // Bottom edge guide - exactly at node bottom edge
+        appendLine(left, contentBottom, width, borderW, guideColor);
+      }
     }
   }
 }
@@ -1519,11 +1590,18 @@ function initNodeSnappingPatches() {
     const moveXMemory = ensureMoveXPointMemory(this, activeNode, hSnapMargin);
     const moveXClusters = moveXMemory ? buildDimensionClusters(moveXMemory.points, moveXMemory.tolerancePx) : [];
     const xWinner = pickNearestMoveCluster(moveXClusters, activeBounds.left);
+    let xSnapEdge = 'left'; // Track which edge of target node was snapped to
 
     if (xWinner && Math.abs(activeBounds.left - xWinner.center) <= currentThresholdX) {
       activeNode.pos[0] = xWinner.center;
       didSnap = true;
       xDidSnapMove = true;
+      // Determine which edge type won for guide rendering
+      if (xWinner.members?.length) {
+        const closest = xWinner.members.slice().sort((a, b) => Math.abs(a.value - xWinner.center) - Math.abs(b.value - xWinner.center))[0];
+        if (closest?.type?.includes('right')) xSnapEdge = 'right';
+        else if (closest?.type?.includes('center')) xSnapEdge = 'center';
+      }
     }
 
     // Y Axis
@@ -1619,12 +1697,22 @@ function initNodeSnappingPatches() {
       }
     }
 
-    // Build winner node lists for guide rendering (only closest, not all cluster members)
+    // Build winner node lists for guide rendering (only closest by spatial distance)
+    const activeBoundsForGuide = getNodeBounds(activeNode);
     const xWinnerNodes = [];
-    if (xWinner?.members?.length) {
-      // Find closest member by value distance from cluster center
-      const closest = xWinner.members.slice().sort((a, b) => Math.abs(a.value - xWinner.center) - Math.abs(b.value - xWinner.center))[0];
-      if (closest?.node) xWinnerNodes.push(closest.node);
+    if (xWinner?.members?.length && activeBoundsForGuide) {
+      // Find closest member by spatial distance to active node
+      const validMembers = xWinner.members.filter(m => m.node && getNodeBounds(m.node));
+      if (validMembers.length) {
+        const closest = validMembers.sort((a, b) => {
+          const boundsA = getNodeBounds(a.node);
+          const boundsB = getNodeBounds(b.node);
+          const distA = Math.hypot(boundsA.centerX - activeBoundsForGuide.centerX, boundsA.centerY - activeBoundsForGuide.centerY);
+          const distB = Math.hypot(boundsB.centerX - activeBoundsForGuide.centerX, boundsB.centerY - activeBoundsForGuide.centerY);
+          return distA - distB;
+        })[0];
+        if (closest?.node) xWinnerNodes.push(closest.node);
+      }
     }
     // Add raycast X winners
     for (const node of raycastXWinners) {
@@ -1634,10 +1722,19 @@ function initNodeSnappingPatches() {
     }
 
     const yWinnerNodes = [];
-    if (yWinner?.members?.length) {
-      // Find closest member by value distance from cluster center
-      const closest = yWinner.members.slice().sort((a, b) => Math.abs(a.value - yWinner.center) - Math.abs(b.value - yWinner.center))[0];
-      if (closest?.node) yWinnerNodes.push(closest.node);
+    if (yWinner?.members?.length && activeBoundsForGuide) {
+      // Find closest member by spatial distance to active node
+      const validMembers = yWinner.members.filter(m => m.node && getNodeBounds(m.node));
+      if (validMembers.length) {
+        const closest = validMembers.sort((a, b) => {
+          const boundsA = getNodeBounds(a.node);
+          const boundsB = getNodeBounds(b.node);
+          const distA = Math.hypot(boundsA.centerX - activeBoundsForGuide.centerX, boundsA.centerY - activeBoundsForGuide.centerY);
+          const distB = Math.hypot(boundsB.centerX - activeBoundsForGuide.centerX, boundsB.centerY - activeBoundsForGuide.centerY);
+          return distA - distB;
+        })[0];
+        if (closest?.node) yWinnerNodes.push(closest.node);
+      }
     }
     // Add raycast Y winners
     for (const node of raycastYWinners) {
@@ -1653,6 +1750,7 @@ function initNodeSnappingPatches() {
       yDidSnap: yDidSnapMove,
       xWinnerNodes: xWinnerNodes,
       yWinnerNodes: yWinnerNodes,
+      xSnapEdge: xSnapEdge,
     };
 
     if (didSnap) {
