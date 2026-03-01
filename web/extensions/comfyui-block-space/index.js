@@ -32,7 +32,6 @@ function applyConnectorSettings() {
   const connectorStyle = getSettingValue("BlockSpace.ConnectorStyle", "hybrid");
   const stubLength = getSettingValue("BlockSpace.ConnectorStubLength", 34);
   
-  // Update connection-focus.js settings
   if (!window.ConnectionFocusSettings) {
     window.ConnectionFocusSettings = {};
   }
@@ -42,7 +41,6 @@ function applyConnectorSettings() {
 }
 
 function registerBlockSpaceSettings() {
-  // --- Section: Connectors ---
   addSetting({
     id: "BlockSpace.EnableCustomConnectors",
     name: "Enable Custom Connectors",
@@ -72,7 +70,6 @@ function registerBlockSpaceSettings() {
     tooltip: "Adjust the length of the straight wire segment emerging from node ports.",
   });
 
-  // --- Section: Snapping ---
   addSetting({
     id: "BlockSpace.Snap.Enabled",
     name: "Enable Snapping",
@@ -116,7 +113,6 @@ function registerBlockSpaceSettings() {
     tooltip: "Display dotted lines showing exactly which nodes are being used for alignment.",
   });
 
-  // --- Section: Visuals ---
   addSetting({
     id: "BlockSpace.Snap.FeedbackPulseMs",
     name: "Snap Pulse Duration (ms)",
@@ -159,7 +155,6 @@ function injectSettingsIcon() {
         width: 18px;
         height: 18px;
       }
-      /* Change cursor to question mark for help icons in our settings */
       .comfy-setting-row:has([id^="BlockSpace."]) .comfy-help-icon,
       tr:has([id^="BlockSpace."]) .comfy-help-icon {
         cursor: help !important;
@@ -182,7 +177,6 @@ function injectSettingsIcon() {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node.nodeType === 1) {
-          // --- Logic 1: Better Node Labeling ---
           const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null, false);
           let n;
           while ((n = walker.nextNode())) {
@@ -217,35 +211,14 @@ async function loadScript(url, options = {}) {
   });
 }
 
-// Legacy fallback: load individual scripts (original behavior)
-async function loadLegacyScripts(baseUrl) {
-  console.warn("[BlockSpace] Loading legacy scripts as fallback");
-  const scripts = [
-    "../../smart-drop.js",
-    "../../smart-sizing.js",
-    "../../connection-focus.js",
-    "../../node-snapping.js",
-    "../../node-arrangement.js",
-  ];
-  for (const rel of scripts) {
-    const url = new URL(rel, baseUrl).toString() + "?v=" + ASSET_VERSION;
-    await loadScript(url);
-  }
-}
-
-// New modular loading: load index.js as ES module
 async function loadBlockSpaceAdapter(baseUrl) {
   const indexUrl = new URL("../../index.js", baseUrl).toString() + "?v=" + ASSET_VERSION;
   
-  // Load as ES module
   await loadScript(indexUrl, { type: "module" });
   
-  // Wait for BlockSpace to initialize
-  // The index.js will auto-initialize, but we expose BlockSpaceInit for manual control
   if (window.BlockSpaceInit) {
     await window.BlockSpaceInit();
   } else {
-    // If BlockSpaceInit is not available, wait a bit for module to load
     await new Promise(resolve => setTimeout(resolve, 100));
     if (window.BlockSpaceInit) {
       await window.BlockSpaceInit();
@@ -258,24 +231,20 @@ async function loadBlockSpaceAdapter(baseUrl) {
 app.registerExtension({
   name: "Block Space",
   async setup() {
-    // Load BetterNodesSettings (still needed for settings store)
     await loadScript(new URL("../../better-nodes-settings.js", import.meta.url).toString() + "?v=" + ASSET_VERSION);
 
     if (window.BetterNodesSettings && typeof window.BetterNodesSettings.__setComfyUIRuntime === "function") {
       window.BetterNodesSettings.__setComfyUIRuntime(true);
     }
 
-    // Try new modular loading first, fallback to legacy on failure
     try {
       await loadBlockSpaceAdapter(import.meta.url);
       console.log("[BlockSpace] Adapter loaded successfully");
     } catch (error) {
       console.error("[BlockSpace] Failed to load adapter:", error);
-      console.warn("[BlockSpace] Falling back to legacy script loading");
-      await loadLegacyScripts(import.meta.url);
+      console.error("[BlockSpace] Please try hard refreshing (Ctrl+F5) or see docs/RECOVERY.md");
     }
 
-    // Reset persisted highlights (backward compatibility)
     if (
       window.BlockSpaceNodeSnap &&
       typeof window.BlockSpaceNodeSnap.resetPersistedHighlightArtifacts === "function"

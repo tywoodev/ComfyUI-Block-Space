@@ -335,6 +335,23 @@ function applyResizeSnapping(canvas, resizingNode) {
     }
   }
 
+  // Set status for guide rendering
+  const xDidSnap = bestXWidth !== null && bestXDelta <= currentThresholdX;
+  const yDidSnap = bestYHeight !== null && bestYDelta <= currentThresholdY;
+  
+  canvas.__blockSpaceResizeDebugStatus = {
+    active: true,
+    axis: "resize",
+    xDidSnap: xDidSnap,
+    yDidSnap: yDidSnap,
+    xWinnerNodes: bestXNodes,
+    yWinnerNodes: bestYNodes,
+    activeLeft: bounds.left,
+    activeTop: bounds.top,
+    xTarget: xDidSnap ? bestXWidth : null,
+    yTarget: yDidSnap ? bestYHeight : null,
+  };
+
   return didSnap;
 }
 
@@ -1508,6 +1525,37 @@ function initNodeSnappingPatches() {
         }
       }
     }
+
+    // Build winner node lists for guide rendering
+    const xWinnerNodes = [];
+    if (xWinner?.members) {
+      const seen = new Set();
+      for (const m of xWinner.members) {
+        if (m.node?.id && !seen.has(m.node.id)) {
+          seen.add(m.node.id);
+          xWinnerNodes.push(m.node);
+        }
+      }
+    }
+    const yWinnerNodes = [];
+    if (yWinner?.members) {
+      const seen = new Set();
+      for (const m of yWinner.members) {
+        if (m.node?.id && !seen.has(m.node.id)) {
+          seen.add(m.node.id);
+          yWinnerNodes.push(m.node);
+        }
+      }
+    }
+
+    this.__blockSpaceResizeDebugStatus = {
+      active: true,
+      axis: "move",
+      xDidSnap: xDidSnapMove,
+      yDidSnap: yDidSnapMove,
+      xWinnerNodes: xWinnerNodes,
+      yWinnerNodes: yWinnerNodes,
+    };
 
     if (didSnap) {
       rememberRecentSnap(this, {
