@@ -55,7 +55,10 @@ Purple dotted lines show you exactly which nodes you're snapping to:
 ### Exit Snap Behavior
 
 Once snapped, the node stays snapped until you drag far enough away:
-- The "exit threshold" is 1.5x the normal snap distance
+- The "exit threshold" depends on your Aggressiveness setting:
+  - **Low**: 3.5x the normal snap distance (very easy to exit)
+  - **Medium**: 2.0x the normal snap distance (balanced)
+  - **High**: 1.5x the normal snap distance (more "sticky")
 - This prevents annoying flickering when you're near a snap point
 - After releasing the mouse, you have 220ms of "grace period" where the snap still applies
 
@@ -64,7 +67,7 @@ Once snapped, the node stays snapped until you drag far enough away:
 | Setting | What It Does | Default |
 |---------|--------------|---------|
 | **Enable Snapping** | Turn snapping on/off | On |
-| **Snap Aggressiveness** | How strongly nodes snap (Low/Medium/High) | Medium |
+| **Snap Aggressiveness** | How strongly nodes snap (Low/Medium/High) | Low |
 | **Snap Sensitivity** | How close you need to be (in pixels) | 10px |
 | **Horizontal Snap Margin** | Preferred gap when stacking side-by-side | 60px |
 | **Vertical Snap Margin** | Preferred gap when stacking vertically | 60px |
@@ -74,11 +77,13 @@ Once snapped, the node stays snapped until you drag far enough away:
 
 #### Snap Aggressiveness Levels
 
-| Level | Move Y | Resize | Exit Multiplier | Feel |
-|-------|--------|--------|-----------------|------|
-| **Low** | 1.0x | 1.0x | 2.5x | Easy free movement, minimal snapping |
-| **Medium** | 1.5x | 1.5x | 2.0x | Balanced snapping (default) |
-| **High** | 2.4x | 2.4x | 1.5x | Strong snapping, more "sticky" feel |
+| Level | Move | Resize | Exit Multiplier | Feel |
+|-------|------|--------|-----------------|------|
+| **Low** | 0.2x | 0.3x | 3.5x | Easy free movement, minimal snapping |
+| **Medium** | 0.8x | 1.3x | 2.0x | Balanced snapping (default) |
+| **High** | 1.0x | 1.8x | 1.5x | Strong snapping, more "sticky" feel |
+
+Note: Both X and Y axes use the same move strength multiplier (axis parity).
 
 ---
 
@@ -96,30 +101,26 @@ The snapping system operates in three phases:
 
 ```javascript
 // Snap aggressiveness presets (Low/Medium/High)
-SNAP_AGGRESSIVENESS = {
-  LOW: {
-    moveSnapStrength: 0.8,
-    moveYSnapStrength: 1.0,
-    resizeSnapStrength: 1.0,
-    exitMultiplier: 2.5
+const SNAP_AGGRESSIVENESS = {
+  "Low": {
+    moveSnapStrength: 0.2,
+    resizeSnapStrength: 0.3,
+    exitMultiplier: 3.5
   },
-  MEDIUM: {
-    moveSnapStrength: 1.0,
-    moveYSnapStrength: 1.5,
-    resizeSnapStrength: 1.5,
+  "Medium": {
+    moveSnapStrength: 0.8,
+    resizeSnapStrength: 1.3,
     exitMultiplier: 2.0
   },
-  HIGH: {
+  "High": {
     moveSnapStrength: 1.0,
-    moveYSnapStrength: 2.4,
-    resizeSnapStrength: 2.4,
+    resizeSnapStrength: 1.8,
     exitMultiplier: 1.5
   }
 }
 
 // Core thresholds
 SNAP_THRESHOLD = 10                           // Base snap distance (pixels)
-EXIT_THRESHOLD_MULTIPLIER = 1.5               // Legacy fallback
 SNAP_MOUSEUP_GRACE_MS = 220                   // Grace period after mouse up
 SNAP_MOUSEUP_TOLERANCE_MULTIPLIER = 1.8       // Persistence tolerance
 
@@ -130,10 +131,7 @@ MOVE_PADDING = 2000                           // Move search radius (px)
 // Visual
 DEFAULT_DIMENSION_TOLERANCE_PX = 12           // Cluster tolerance
 DEFAULT_H_SNAP_MARGIN = 60                    // Horizontal margin (px)
-DEFAULT_V_SNAP_MARGIN = 40                    // Vertical margin (px)
-DEFAULT_MOVE_SNAP_STRENGTH = 1.0              // Move threshold multiplier
-DEFAULT_MOVE_Y_SNAP_STRENGTH = 2.4            // Y-axis move multiplier
-DEFAULT_RESIZE_SNAP_STRENGTH = 2.4            // Resize threshold multiplier
+DEFAULT_V_SNAP_MARGIN = 60                    // Vertical margin (px)
 
 // Node geometry
 NODE_TITLE_HEIGHT = 24                        // LiteGraph title bar height
@@ -151,10 +149,10 @@ On mouse move:
   3. Calculate dynamic threshold
      baseThreshold = SNAP_THRESHOLD / canvasScale
      thresholdX = baseThreshold * moveSnapStrength
-     thresholdY = baseThreshold * moveYSnapStrength
+     thresholdY = baseThreshold * moveSnapStrength  // Same as X (axis parity)
      
      If was already snapped on X:
-       thresholdX *= EXIT_THRESHOLD_MULTIPLIER
+       thresholdX *= exitMultiplier  // From aggressiveness preset
      Same for Y
   
   4. Find candidate nodes within MOVE_PADDING (2000px)
@@ -197,7 +195,7 @@ On mouse move:
   10. Update guide rendering state
       xWinnerNodes = [spatially closest node in winning cluster]
       yWinnerNodes = [spatially closest node in winning cluster]
-      xSnapEdge = edge type that triggered snap ('left'|'right'|'center')
+      // Note: Guide rendering uses spatial proximity (activeCenter vs targetCenter)
 ```
 
 ### Resize Snapping Algorithm
@@ -252,7 +250,7 @@ On resize:
   8. Apply if within threshold
      threshold = (SNAP_THRESHOLD / canvasScale) * resizeSnapStrength
      If was already snapped on this axis:
-       threshold *= EXIT_THRESHOLD_MULTIPLIER
+       threshold *= exitMultiplier  // From aggressiveness preset
      
      If |currentWidth - bestWidth| <= threshold:
        resizingNode.size[0] = max(minSize, bestWidth)
@@ -260,49 +258,51 @@ On resize:
 
 ### Guide Rendering Rules
 
+**Move Snapping (Simplified Logic):**
 ```
 For each winning node:
   1. Get node bounds
      bounds = getNodeBounds(node)
   
-  2. Calculate visual positions
-     // Vertical guides use full bounds
+  2. Calculate centers for proximity comparison
+     activeCenterX = status.activeCenterX ?? activeBounds.left
+     targetCenterX = bounds.left + (bounds.right - bounds.left) / 2
+     activeCenterY = status.activeCenterY ?? activeBounds.top
+     targetCenterY = bounds.top + (bounds.bottom - bounds.top) / 2
+  
+  3. Determine closest edge based on spatial proximity
+     // X-axis: show left edge if active is left of target, else right edge
+     xGuideCanvasX = activeCenterX < targetCenterX ? bounds.left : bounds.right
+     
+     // Y-axis: show top edge if active is above target, else bottom edge  
+     yGuideCanvasY = activeCenterY < targetCenterY ? bounds.top : bounds.bottom
+  
+  4. Convert canvas to client coordinates
+     clientPos = graphToClient(canvas, xGuideCanvasX, yGuideCanvasY)
+  
+  5. Draw single guide at closest edge
+     // X-axis: vertical line at closest left/right edge
+     // Y-axis: horizontal line at closest top/bottom edge
+```
+
+**Resize Snapping:**
+```
+For each winning node:
+  1. Get node bounds and calculate content positions
      leftX = bounds.left
      rightX = bounds.right
-     
-     // Horizontal guides offset by title height
      contentTopY = bounds.top - titleH
      contentBottomY = bounds.bottom - titleH
   
-  3. Convert canvas to client coordinates
-     topLeft = graphToClient(canvas, leftX, contentTopY)
-     bottomRight = graphToClient(canvas, rightX, contentBottomY)
-  
-  4. Draw guides based on snap type
+  2. Draw guides based on resize edge type
+     If xResizeEdge == 'left':
+       Draw line at leftX only
+     Else if xResizeEdge == 'right':
+       Draw line at rightX only
+     Else (both/dimension match):
+       Draw lines at leftX AND rightX
      
-     Move snapping (X):
-       If xSnapEdge == 'right':
-         Draw line at rightX
-       Else if xSnapEdge == 'center':
-         Draw line at (leftX + rightX) / 2
-       Else:
-         Draw line at leftX
-     
-     Resize snapping (X):
-       If xResizeEdge == 'left':
-         Draw line at leftX only
-       Else if xResizeEdge == 'right':
-         Draw line at rightX only
-       Else (both):
-         Draw lines at leftX AND rightX
-     
-     Resize snapping (Y):
-       If yResizeEdge == 'top':
-         Draw line at contentTopY only
-       Else if yResizeEdge == 'bottom':
-         Draw line at contentBottomY only
-       Else (both):
-         Draw lines at contentTopY AND contentBottomY
+     Same logic for Y-axis with top/bottom edges
 ```
 
 ### Memory and Caching
@@ -344,7 +344,7 @@ Memory is invalidated when:
 | `BlockSpace.ConnectorStyle` | combo | "hybrid" | Wire routing style |
 | `BlockSpace.ConnectorStubLength` | slider | 34 | Wire stub length (px) |
 | `BlockSpace.Snap.Enabled` | boolean | true | Master snapping toggle |
-| `BlockSpace.Snap.Aggressiveness` | combo | "Medium" | Snap strength: Low/Medium/High |
+| `BlockSpace.Snap.Aggressiveness` | combo | "Low" | Snap strength: Low/Medium/High |
 | `BlockSpace.Snap.Sensitivity` | slider | 10 | Base snap distance (px) |
 | `BlockSpace.Snap.HMarginPx` | slider | 60 | Horizontal stack margin (px) |
 | `BlockSpace.Snap.VMarginPx` | slider | 60 | Vertical stack margin (px) |

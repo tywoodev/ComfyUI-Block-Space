@@ -30,8 +30,25 @@ import {
   getFeedbackColorY,
   getFeedbackColorXY,
 } from './core-math.js';
+import { onAnySettingChanged } from './settings-events.js';
 
 const V2_ADAPTER_VERSION = "2.0.0-stub";
+
+// V2 state
+const V2State = {
+  settingsUnsubscribe: null,
+};
+
+function handleSettingChange(settingId, value) {
+  // In V2, settings are reactive via Vue, but we log for debugging
+  // and trigger any non-Vue DOM updates if needed
+  console.log('[BlockSpace V2] Setting changed:', settingId, '=', value);
+
+  // TODO: When V2 API stabilizes, implement:
+  // - Update Vue reactive state
+  // - Trigger DOM guide updates
+  // - Invalidate snap caches
+}
 
 /**
  * Initialize V2 Adapter
@@ -52,6 +69,10 @@ export function initV2Adapter() {
   // For now, just expose the core math functions
   // so other extensions can use them
   exposeCoreMath();
+
+  // Subscribe to setting changes for real-time updates
+  // This will be useful when V2 is fully implemented
+  V2State.settingsUnsubscribe = onAnySettingChanged(handleSettingChange);
   
   return true;
 }
@@ -61,6 +82,13 @@ export function initV2Adapter() {
  */
 export function cleanupV2Adapter() {
   console.log('[BlockSpace] V2 Adapter cleanup');
+  
+  // Unsubscribe from setting changes
+  if (V2State.settingsUnsubscribe) {
+    V2State.settingsUnsubscribe();
+    V2State.settingsUnsubscribe = null;
+  }
+  
   // TODO: Remove event listeners, clean up DOM elements
 }
 

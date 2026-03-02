@@ -1,4 +1,5 @@
 import { app } from "/scripts/app.js";
+import { emitSettingChanged } from "../../settings-events.js";
 
 const ASSET_VERSION = "2026-03-01-adapter-v2";
 
@@ -22,11 +23,29 @@ function getSettingValue(id, fallback) {
   }
 }
 
-function applyConnectorSettings() {
+function applyConnectorSettingsAndEmit(settingId, value) {
+  // Update the global settings object with the new value
   window.ConnectionFocusSettings ??= {};
-  window.ConnectionFocusSettings.enabled = getSettingValue("BlockSpace.EnableCustomConnectors", true);
-  window.ConnectionFocusSettings.connectorStyle = getSettingValue("BlockSpace.ConnectorStyle", "hybrid");
-  window.ConnectionFocusSettings.connectorStubLength = getSettingValue("BlockSpace.ConnectorStubLength", 34);
+  
+  // Update the specific setting that changed (use passed value or read from store)
+  if (settingId === "BlockSpace.EnableCustomConnectors") {
+    window.ConnectionFocusSettings.enabled = value !== undefined ? value : getSettingValue(settingId, true);
+  } else if (settingId === "BlockSpace.ConnectorStyle") {
+    window.ConnectionFocusSettings.connectorStyle = value !== undefined ? value : getSettingValue(settingId, "hybrid");
+  } else if (settingId === "BlockSpace.ConnectorStubLength") {
+    window.ConnectionFocusSettings.connectorStubLength = value !== undefined ? value : getSettingValue(settingId, 34);
+  } else {
+    // Initial load - read all settings
+    window.ConnectionFocusSettings.enabled = getSettingValue("BlockSpace.EnableCustomConnectors", true);
+    window.ConnectionFocusSettings.connectorStyle = getSettingValue("BlockSpace.ConnectorStyle", "hybrid");
+    window.ConnectionFocusSettings.connectorStubLength = getSettingValue("BlockSpace.ConnectorStubLength", 34);
+  }
+  
+  // Emit event for real-time updates in adapters
+  if (settingId) {
+    const emitValue = value !== undefined ? value : getSettingValue(settingId, null);
+    emitSettingChanged(settingId, emitValue);
+  }
 }
 
 function registerBlockSpaceSettings() {
@@ -35,7 +54,7 @@ function registerBlockSpaceSettings() {
     name: "Enable Custom Connectors",
     type: "boolean",
     defaultValue: true,
-    onChange: applyConnectorSettings,
+    onChange: (value) => applyConnectorSettingsAndEmit("BlockSpace.EnableCustomConnectors", value),
     tooltip: "Toggle high-fidelity connector rendering with animated flow tracing.",
   });
   
@@ -45,7 +64,7 @@ function registerBlockSpaceSettings() {
     type: "combo",
     options: ["hybrid", "straight", "angled"],
     defaultValue: "hybrid",
-    onChange: applyConnectorSettings,
+    onChange: (value) => applyConnectorSettingsAndEmit("BlockSpace.ConnectorStyle", value),
     tooltip: "Choose the routing algorithm for node wires. Hybrid is recommended for most workflows.",
   });
 
@@ -55,7 +74,7 @@ function registerBlockSpaceSettings() {
     type: "slider",
     attrs: { min: 10, max: 80, step: 1 },
     defaultValue: 34,
-    onChange: applyConnectorSettings,
+    onChange: (value) => applyConnectorSettingsAndEmit("BlockSpace.ConnectorStubLength", value),
     tooltip: "Adjust the length of the straight wire segment emerging from node ports.",
   });
 
@@ -64,6 +83,7 @@ function registerBlockSpaceSettings() {
     name: "Enable Snapping",
     type: "boolean",
     defaultValue: true,
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.Enabled", value),
     tooltip: "Enable automatic node alignment and resizing guides.",
   });
 
@@ -72,7 +92,8 @@ function registerBlockSpaceSettings() {
     name: "Snap Aggressiveness",
     type: "combo",
     options: ["Low", "Medium", "High"],
-    defaultValue: "Medium",
+    defaultValue: "Low",
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.Aggressiveness", value),
     tooltip: "Controls how strongly nodes snap to alignment. Low = easier free movement, High = stronger snapping.",
   });
 
@@ -82,6 +103,7 @@ function registerBlockSpaceSettings() {
     type: "slider",
     attrs: { min: 4, max: 30, step: 1 },
     defaultValue: 10,
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.Sensitivity", value),
     tooltip: "The distance in pixels at which nodes will pull into alignment.",
   });
 
@@ -91,6 +113,7 @@ function registerBlockSpaceSettings() {
     type: "slider",
     attrs: { min: 0, max: 200, step: 2 },
     defaultValue: 60,
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.HMarginPx", value),
     tooltip: "The preferred gap distance when snapping nodes side-by-side.",
   });
 
@@ -100,6 +123,7 @@ function registerBlockSpaceSettings() {
     type: "slider",
     attrs: { min: 0, max: 200, step: 2 },
     defaultValue: 60,
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.VMarginPx", value),
     tooltip: "The preferred gap distance when snapping nodes vertically.",
   });
 
@@ -108,6 +132,7 @@ function registerBlockSpaceSettings() {
     name: "Show Alignment Guides",
     type: "boolean",
     defaultValue: true,
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.HighlightEnabled", value),
     tooltip: "Display dotted lines showing exactly which nodes are being used for alignment.",
   });
 
@@ -117,6 +142,7 @@ function registerBlockSpaceSettings() {
     type: "slider",
     attrs: { min: 0, max: 1000, step: 20 },
     defaultValue: 160,
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.FeedbackPulseMs", value),
     tooltip: "How long the node border glows after a successful snap. Set to 0 to disable.",
   });
 
@@ -134,10 +160,11 @@ function registerBlockSpaceSettings() {
       "Signal Orange",
     ],
     defaultValue: "Comfy Blue",
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.HighlightColor", value),
     tooltip: "Choose the color for snapping alignment guides.",
   });
   
-  applyConnectorSettings();
+  applyConnectorSettingsAndEmit(null);
 }
 
 function injectSettingsIcon() {

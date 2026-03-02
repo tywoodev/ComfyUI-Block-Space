@@ -13,8 +13,8 @@
 const SNAP_AGGRESSIVENESS = {
   "Low": {
     moveSnapStrength: 0.2,   // Used for both X and Y axis
-    resizeSnapStrength: 0.3,
-    exitMultiplier: 3.5
+    resizeSnapStrength: 0.4,
+    exitMultiplier: 5.0
   },
   "Medium": {
     moveSnapStrength: 0.8,   // Used for both X and Y axis

@@ -34,6 +34,7 @@ import {
   getFeedbackColorY,
   getFeedbackColorXY,
 } from './core-math.js';
+import { onAnySettingChanged } from './settings-events.js';
 
 // ============================================================================
 // Constants
@@ -60,6 +61,7 @@ const V1State = {
   originalConfigure: null,
   originalGraphAdd: null,
   originalDrawNodeSS: null,
+  settingsUnsubscribe: null,
 };
 
 // ============================================================================
@@ -510,6 +512,7 @@ function renderDimensionAssociationHighlights(canvas, status) {
   if (!layer) return;
   while (layer.firstChild) layer.removeChild(layer.firstChild);
   if (!canvas || !status?.active) return;
+  if (!getHighlightEnabled()) return;
 
   const scale = getCanvasScale(canvas);
   const borderW = 2;
@@ -2079,6 +2082,64 @@ function initUnifiedMouseUpHandler() {
 // Main Export
 // ============================================================================
 
+function getLGraphCanvas() {
+  // Try multiple ways to get the canvas reference
+  return window.app?.canvas || window.LGraphCanvas?.active_canvas || window.graphcanvas;
+}
+
+function redrawCanvas() {
+  const canvas = getLGraphCanvas();
+  if (!canvas) return;
+  
+  // Mark dirty first
+  if (canvas.setDirty) {
+    canvas.setDirty(true, true);
+  }
+  
+  // Try to force an immediate redraw
+  if (canvas.draw) {
+    try {
+      canvas.draw();
+    } catch (e) {
+      // Ignore draw errors
+    }
+  }
+}
+
+function handleSettingChange(settingId, value) {
+  // Visual settings that need immediate canvas redraw
+  const visualSettings = [
+    "BlockSpace.Snap.HighlightEnabled",
+    "BlockSpace.Snap.HighlightColor",
+    "BlockSpace.Snap.FeedbackPulseMs",
+    "BlockSpace.EnableCustomConnectors",
+    "BlockSpace.ConnectorStyle",
+    "BlockSpace.ConnectorStubLength",
+  ];
+
+  if (visualSettings.includes(settingId)) {
+    redrawCanvas();
+  }
+
+  // Invalidate caches for settings that affect snap logic
+  const snapLogicSettings = [
+    "BlockSpace.Snap.Enabled",
+    "BlockSpace.Snap.Aggressiveness",
+    "BlockSpace.Snap.Sensitivity",
+    "BlockSpace.Snap.HMarginPx",
+    "BlockSpace.Snap.VMarginPx",
+  ];
+
+  if (snapLogicSettings.includes(settingId)) {
+    // Clear point memory so next drag uses new values
+    if (window.app?.canvas) {
+      window.app.canvas.__blockSpaceMoveXPointMemory = null;
+      window.app.canvas.__blockSpaceMoveYPointMemory = null;
+      window.app.canvas.__blockSpaceResizeDimensionMemory = null;
+    }
+  }
+}
+
 export function initV1Adapter() {
   if (!window.LGraphCanvas?.prototype) {
     console.error('[BlockSpace V1 Adapter] LGraphCanvas not available');
@@ -2092,6 +2153,9 @@ export function initV1Adapter() {
   initNodeSnappingPatches();
   initSmartDropPatches();
   initUnifiedMouseUpHandler();
+
+  // Subscribe to setting changes for real-time updates
+  V1State.settingsUnsubscribe = onAnySettingChanged(handleSettingChange);
 
   window.__blockSpaceV1AdapterInitialized = true;
   console.log('[BlockSpace] V1 Adapter initialized');
@@ -2113,6 +2177,12 @@ export function cleanupV1Adapter() {
     window.__blockSpaceArrangementPoller = null;
   }
   stopAnimationLoop();
+
+  // Unsubscribe from setting changes
+  if (V1State.settingsUnsubscribe) {
+    V1State.settingsUnsubscribe();
+    V1State.settingsUnsubscribe = null;
+  }
 
   const panel = document.getElementById("block-space-arrangement-panel");
   if (panel?.parentNode) panel.parentNode.removeChild(panel);
