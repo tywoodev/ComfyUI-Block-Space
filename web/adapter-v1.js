@@ -325,7 +325,7 @@ function applyResizeSnapping(canvas, resizingNode) {
   if (bestXWidth !== null && bestXDelta <= currentThresholdX) {
     const nextWidth = Math.max(minSize[0], bestXWidth);
     if (isFinite(nextWidth) && Math.abs(nextWidth - currentWidth) > 0.01) {
-      resizingNode.size[0] = nextWidth;
+      resizingNode.size[0] = Math.round(nextWidth);
       didSnap = true;
     }
   }
@@ -375,7 +375,7 @@ function applyResizeSnapping(canvas, resizingNode) {
   if (bestYHeight !== null && bestYDelta <= currentThresholdY) {
     const nextContentHeight = Math.max(minSize[1], bestYHeight - titleH);
     if (isFinite(nextContentHeight) && Math.abs(nextContentHeight - resizingNode.size[1]) > 0.01) {
-      resizingNode.size[1] = nextContentHeight;
+      resizingNode.size[1] = Math.round(nextContentHeight);
       didSnap = true;
     }
   }
@@ -458,22 +458,22 @@ function maybeCommitSnapOnMouseUp(canvas, nodeHint) {
 
   if (snap.kind === "move") {
     if (snap.xDidSnap && typeof snap.xTarget === "number" && Math.abs(bounds.left - snap.xTarget) <= tolerance) {
-      node.pos[0] = snap.xTarget;
+      node.pos[0] = Math.round(snap.xTarget);
       appliedX = true;
     }
     if (snap.yDidSnap && typeof snap.yTarget === "number" && Math.abs(bounds.top - snap.yTarget) <= tolerance) {
-      node.pos[1] = snap.yTarget;
+      node.pos[1] = Math.round(snap.yTarget);
       appliedY = true;
     }
   } else if (snap.kind === "resize") {
     const minSize = getNodeMinSize(node);
     const titleH = Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24;
     if (snap.xDidSnap && typeof snap.xTargetRight === "number" && Math.abs(bounds.right - snap.xTargetRight) <= tolerance) {
-      node.size[0] = Math.max(minSize[0], snap.xTargetRight - bounds.left);
+      node.size[0] = Math.round(Math.max(minSize[0], snap.xTargetRight - bounds.left));
       appliedX = true;
     }
     if (snap.yDidSnap && typeof snap.yTargetBottom === "number" && Math.abs(bounds.bottom - snap.yTargetBottom) <= tolerance) {
-      node.size[1] = Math.max(minSize[1], (snap.yTargetBottom - bounds.top) - titleH);
+      node.size[1] = Math.round(Math.max(minSize[1], (snap.yTargetBottom - bounds.top) - titleH));
       appliedY = true;
     }
   }
@@ -1345,11 +1345,11 @@ function arrangeSelection(canvas, mode) {
 
       for (const node of col) {
         const bounds = getNodeBounds(node);
-        node.pos[0] = currentX;
-        node.pos[1] = currentY;
+        node.pos[0] = Math.round(currentX);
+        node.pos[1] = Math.round(currentY);
         const newContentHeight = Math.max(node.size[1], (bounds ? bounds.bottom - bounds.top : 0) + heightBonusPerNode - titleH);
-        node.size[1] = newContentHeight;
-        node.size[0] = colWidths[c];
+        node.size[1] = Math.round(newContentHeight);
+        node.size[0] = Math.round(colWidths[c]);
         currentY += newContentHeight + titleH + vMargin;
       }
       currentX += colWidths[c] + hMargin;
@@ -1360,11 +1360,11 @@ function arrangeSelection(canvas, mode) {
       const node = nodes[i];
       const prevBounds = getNodeBounds(prev);
       if (mode === "y") {
-        node.pos[0] = anchor.pos[0];
-        node.pos[1] = prevBounds.bottom + vMargin;
+        node.pos[0] = Math.round(anchor.pos[0]);
+        node.pos[1] = Math.round(prevBounds.bottom + vMargin);
       } else {
-        node.pos[1] = anchor.pos[1];
-        node.pos[0] = prevBounds.right + hMargin;
+        node.pos[1] = Math.round(anchor.pos[1]);
+        node.pos[0] = Math.round(prevBounds.right + hMargin);
       }
     }
   }
@@ -1577,7 +1577,7 @@ function initNodeSnappingPatches() {
     const xWinner = pickNearestMoveCluster(moveXClusters, activeBounds.left);
 
     if (xWinner && Math.abs(activeBounds.left - xWinner.center) <= currentThresholdX) {
-      activeNode.pos[0] = xWinner.center;
+      activeNode.pos[0] = Math.round(xWinner.center);
       didSnap = true;
       xDidSnapMove = true;
     }
@@ -1588,7 +1588,7 @@ function initNodeSnappingPatches() {
     const yWinner = pickNearestMoveCluster(moveYClusters, activeBounds.top);
 
     if (yWinner && Math.abs(activeBounds.top - yWinner.center) <= currentThresholdY) {
-      activeNode.pos[1] = yWinner.center;
+      activeNode.pos[1] = Math.round(yWinner.center);
       didSnap = true;
       yDidSnapMove = true;
     }
@@ -1619,7 +1619,7 @@ function initNodeSnappingPatches() {
             // Align right edge of active to left edge of neighbor (with margin)
             targetX = nBounds.left - hSnapMargin - activeWidth;
             if (Math.abs(activeBounds.left - targetX) <= threshold) {
-              activeNode.pos[0] = targetX;
+              activeNode.pos[0] = Math.round(targetX);
               didSnap = true;
               xDidSnapMove = true;
               raycastXWinners.push(neighbor.node);
@@ -1628,7 +1628,7 @@ function initNodeSnappingPatches() {
             // Align left edge of active to right edge of neighbor (with margin)
             targetX = nBounds.right + hSnapMargin;
             if (Math.abs(activeBounds.left - targetX) <= threshold) {
-              activeNode.pos[0] = targetX;
+              activeNode.pos[0] = Math.round(targetX);
               didSnap = true;
               xDidSnapMove = true;
               raycastXWinners.push(neighbor.node);
@@ -1645,7 +1645,7 @@ function initNodeSnappingPatches() {
             // Align bottom edge of active to top edge of neighbor (with margin)
             targetY = nBounds.top - vSnapMargin - activeHeight;
             if (Math.abs(activeBounds.top - targetY) <= threshold) {
-              activeNode.pos[1] = targetY;
+              activeNode.pos[1] = Math.round(targetY);
               didSnap = true;
               yDidSnapMove = true;
               raycastYWinners.push(neighbor.node);
@@ -1654,7 +1654,7 @@ function initNodeSnappingPatches() {
             // Align top edge of active to bottom edge of neighbor (with margin)
             targetY = nBounds.bottom + vSnapMargin;
             if (Math.abs(activeBounds.top - targetY) <= threshold) {
-              activeNode.pos[1] = targetY;
+              activeNode.pos[1] = Math.round(targetY);
               didSnap = true;
               yDidSnapMove = true;
               raycastYWinners.push(neighbor.node);
@@ -1669,8 +1669,8 @@ function initNodeSnappingPatches() {
       const totalMoveY = activeNode.pos[1] - dragSnapshot.anchorY;
       for (const entry of dragSnapshot.nodes) {
         if (entry.node?.pos) {
-          entry.node.pos[0] = entry.x + totalMoveX;
-          entry.node.pos[1] = entry.y + totalMoveY;
+          entry.node.pos[0] = Math.round(entry.x + totalMoveX);
+          entry.node.pos[1] = Math.round(entry.y + totalMoveY);
         }
       }
     }
