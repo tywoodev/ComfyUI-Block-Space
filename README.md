@@ -147,6 +147,14 @@ The extension automatically detects the ComfyUI version and loads the appropriat
 - **Guide Line Color** - Choose your preferred guide color from 7 presets
 - **Snap Pulse Duration** - How long the green border glow lasts after snapping
 
+**Harmonize Algorithm Rewrite**
+- Complete refactor to row-based flexbox-style layout
+- Groups nodes by Y-coordinate into rows (100px threshold)
+- Sorts rows top-to-bottom, nodes within each row left-to-right
+- **Critical fix:** No longer mutates `node.size` - only modifies `node.pos`
+- Preserves original node dimensions while harmonizing positions
+- Eliminates visual distortion with wide "spanning" nodes
+
 ---
 
 ## 🛠️ Troubleshooting
