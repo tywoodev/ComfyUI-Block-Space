@@ -1,54 +1,60 @@
 import { app } from "/scripts/app.js";
+import { emitSettingChanged } from "../../settings-events.js";
 
-const ASSET_VERSION = "2026-02-27-settings-expansion-v1";
+const ASSET_VERSION = "2026-03-01-adapter-v2";
 
 function addSetting(definition) {
-  const settings = app && app.ui && app.ui.settings;
-  if (!settings || typeof settings.addSetting !== "function") {
-    return;
-  }
+  const add = app?.ui?.settings?.addSetting;
+  if (typeof add !== "function") return;
   try {
-    settings.addSetting(definition);
-  } catch (error) {
+    add(definition);
+  } catch {
     // Ignore per-setting registration errors
   }
 }
 
 function getSettingValue(id, fallback) {
-  const settings = app && app.ui && app.ui.settings;
-  if (!settings || typeof settings.getSettingValue !== "function") {
-    return fallback;
-  }
+  const get = app?.ui?.settings?.getSettingValue;
+  if (typeof get !== "function") return fallback;
   try {
-    const value = settings.getSettingValue(id);
-    return value == null ? fallback : value;
-  } catch (error) {
+    return get(id) ?? fallback;
+  } catch {
     return fallback;
   }
 }
 
-function applyConnectorSettings() {
-  const isEnabled = getSettingValue("BlockSpace.EnableCustomConnectors", true);
-  const connectorStyle = getSettingValue("BlockSpace.ConnectorStyle", "hybrid");
-  const stubLength = getSettingValue("BlockSpace.ConnectorStubLength", 34);
+function applyConnectorSettingsAndEmit(settingId, value) {
+  // Update the global settings object with the new value
+  window.ConnectionFocusSettings ??= {};
   
-  // Update connection-focus.js settings
-  if (!window.ConnectionFocusSettings) {
-    window.ConnectionFocusSettings = {};
+  // Update the specific setting that changed (use passed value or read from store)
+  if (settingId === "BlockSpace.EnableCustomConnectors") {
+    window.ConnectionFocusSettings.enabled = value !== undefined ? value : getSettingValue(settingId, true);
+  } else if (settingId === "BlockSpace.ConnectorStyle") {
+    window.ConnectionFocusSettings.connectorStyle = value !== undefined ? value : getSettingValue(settingId, "hybrid");
+  } else if (settingId === "BlockSpace.ConnectorStubLength") {
+    window.ConnectionFocusSettings.connectorStubLength = value !== undefined ? value : getSettingValue(settingId, 34);
+  } else {
+    // Initial load - read all settings
+    window.ConnectionFocusSettings.enabled = getSettingValue("BlockSpace.EnableCustomConnectors", true);
+    window.ConnectionFocusSettings.connectorStyle = getSettingValue("BlockSpace.ConnectorStyle", "hybrid");
+    window.ConnectionFocusSettings.connectorStubLength = getSettingValue("BlockSpace.ConnectorStubLength", 34);
   }
-  window.ConnectionFocusSettings.enabled = isEnabled;
-  window.ConnectionFocusSettings.connectorStyle = connectorStyle;
-  window.ConnectionFocusSettings.connectorStubLength = stubLength;
+  
+  // Emit event for real-time updates in adapters
+  if (settingId) {
+    const emitValue = value !== undefined ? value : getSettingValue(settingId, null);
+    emitSettingChanged(settingId, emitValue);
+  }
 }
 
 function registerBlockSpaceSettings() {
-  // --- Section: Connectors ---
   addSetting({
     id: "BlockSpace.EnableCustomConnectors",
     name: "Enable Custom Connectors",
     type: "boolean",
     defaultValue: true,
-    onChange: applyConnectorSettings,
+    onChange: (value) => applyConnectorSettingsAndEmit("BlockSpace.EnableCustomConnectors", value),
     tooltip: "Toggle high-fidelity connector rendering with animated flow tracing.",
   });
   
@@ -58,7 +64,7 @@ function registerBlockSpaceSettings() {
     type: "combo",
     options: ["hybrid", "straight", "angled"],
     defaultValue: "hybrid",
-    onChange: applyConnectorSettings,
+    onChange: (value) => applyConnectorSettingsAndEmit("BlockSpace.ConnectorStyle", value),
     tooltip: "Choose the routing algorithm for node wires. Hybrid is recommended for most workflows.",
   });
 
@@ -68,17 +74,27 @@ function registerBlockSpaceSettings() {
     type: "slider",
     attrs: { min: 10, max: 80, step: 1 },
     defaultValue: 34,
-    onChange: applyConnectorSettings,
+    onChange: (value) => applyConnectorSettingsAndEmit("BlockSpace.ConnectorStubLength", value),
     tooltip: "Adjust the length of the straight wire segment emerging from node ports.",
   });
 
-  // --- Section: Snapping ---
   addSetting({
     id: "BlockSpace.Snap.Enabled",
     name: "Enable Snapping",
     type: "boolean",
     defaultValue: true,
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.Enabled", value),
     tooltip: "Enable automatic node alignment and resizing guides.",
+  });
+
+  addSetting({
+    id: "BlockSpace.Snap.Aggressiveness",
+    name: "Snap Aggressiveness",
+    type: "combo",
+    options: ["Low", "Medium", "High"],
+    defaultValue: "Low",
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.Aggressiveness", value),
+    tooltip: "Controls how strongly nodes snap to alignment. Low = easier free movement, High = stronger snapping.",
   });
 
   addSetting({
@@ -87,6 +103,7 @@ function registerBlockSpaceSettings() {
     type: "slider",
     attrs: { min: 4, max: 30, step: 1 },
     defaultValue: 10,
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.Sensitivity", value),
     tooltip: "The distance in pixels at which nodes will pull into alignment.",
   });
 
@@ -96,6 +113,7 @@ function registerBlockSpaceSettings() {
     type: "slider",
     attrs: { min: 0, max: 200, step: 2 },
     defaultValue: 60,
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.HMarginPx", value),
     tooltip: "The preferred gap distance when snapping nodes side-by-side.",
   });
 
@@ -105,6 +123,7 @@ function registerBlockSpaceSettings() {
     type: "slider",
     attrs: { min: 0, max: 200, step: 2 },
     defaultValue: 60,
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.VMarginPx", value),
     tooltip: "The preferred gap distance when snapping nodes vertically.",
   });
 
@@ -113,16 +132,17 @@ function registerBlockSpaceSettings() {
     name: "Show Alignment Guides",
     type: "boolean",
     defaultValue: true,
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.HighlightEnabled", value),
     tooltip: "Display dotted lines showing exactly which nodes are being used for alignment.",
   });
 
-  // --- Section: Visuals ---
   addSetting({
     id: "BlockSpace.Snap.FeedbackPulseMs",
     name: "Snap Pulse Duration (ms)",
     type: "slider",
     attrs: { min: 0, max: 1000, step: 20 },
     defaultValue: 160,
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.FeedbackPulseMs", value),
     tooltip: "How long the node border glows after a successful snap. Set to 0 to disable.",
   });
 
@@ -140,10 +160,11 @@ function registerBlockSpaceSettings() {
       "Signal Orange",
     ],
     defaultValue: "Comfy Blue",
+    onChange: (value) => emitSettingChanged("BlockSpace.Snap.HighlightColor", value),
     tooltip: "Choose the color for snapping alignment guides.",
   });
   
-  applyConnectorSettings();
+  applyConnectorSettingsAndEmit(null);
 }
 
 function injectSettingsIcon() {
@@ -159,7 +180,6 @@ function injectSettingsIcon() {
         width: 18px;
         height: 18px;
       }
-      /* Change cursor to question mark for help icons in our settings */
       .comfy-setting-row:has([id^="BlockSpace."]) .comfy-help-icon,
       tr:has([id^="BlockSpace."]) .comfy-help-icon {
         cursor: help !important;
@@ -182,7 +202,6 @@ function injectSettingsIcon() {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node.nodeType === 1) {
-          // --- Logic 1: Better Node Labeling ---
           const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null, false);
           let n;
           while ((n = walker.nextNode())) {
@@ -203,48 +222,64 @@ function injectSettingsIcon() {
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
-async function loadScript(url) {
+async function loadScript(url, options = {}) {
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = url;
     script.async = false;
+    if (options.type) {
+      script.type = options.type;
+    }
     script.onload = () => resolve(url);
     script.onerror = () => reject(new Error("Failed to load script: " + url));
     document.body.appendChild(script);
   });
 }
 
-async function ensureRuntimeScriptsLoaded(baseUrl) {
-  const scripts = [
-    "../../smart-drop.js",
-    "../../smart-sizing.js",
-    "../../connection-focus.js",
-    "../../node-snapping.js",
-    "../../node-arrangement.js",
-  ];
-  for (const rel of scripts) {
-    const url = new URL(rel, baseUrl).toString() + "?v=" + ASSET_VERSION;
-    await loadScript(url);
-  }
+function loadBlockSpaceAdapter(baseUrl) {
+  const indexUrl = new URL("../../index.js", baseUrl).toString() + "?v=" + ASSET_VERSION;
+  
+  // Non-blocking script load
+  const script = document.createElement("script");
+  script.src = indexUrl;
+  script.type = "module";
+  script.async = true; // Non-blocking
+  script.onload = () => {
+    console.log("[BlockSpace] Module loaded, adapter will auto-initialize");
+  };
+  script.onerror = () => {
+    console.error("[BlockSpace] Failed to load module. Try hard refresh (Ctrl+F5)");
+  };
+  document.head.appendChild(script);
 }
 
 app.registerExtension({
   name: "Block Space",
-  async setup() {
-    await loadScript(new URL("../../better-nodes-settings.js", import.meta.url).toString() + "?v=" + ASSET_VERSION);
+  setup() {
+    // Load settings script (non-blocking)
+    const settingsUrl = new URL("../../better-nodes-settings.js", import.meta.url).toString() + "?v=" + ASSET_VERSION;
+    const settingsScript = document.createElement("script");
+    settingsScript.src = settingsUrl;
+    settingsScript.async = true;
+    settingsScript.onload = () => {
+      if (window.BetterNodesSettings && typeof window.BetterNodesSettings.__setComfyUIRuntime === "function") {
+        window.BetterNodesSettings.__setComfyUIRuntime(true);
+      }
+    };
+    document.head.appendChild(settingsScript);
 
-    if (window.BetterNodesSettings && typeof window.BetterNodesSettings.__setComfyUIRuntime === "function") {
-      window.BetterNodesSettings.__setComfyUIRuntime(true);
-    }
+    // Load adapter (non-blocking, auto-detects V1/V2)
+    loadBlockSpaceAdapter(import.meta.url);
 
-    await ensureRuntimeScriptsLoaded(import.meta.url);
-
-    if (
-      window.BlockSpaceNodeSnap &&
-      typeof window.BlockSpaceNodeSnap.resetPersistedHighlightArtifacts === "function"
-    ) {
-      window.BlockSpaceNodeSnap.resetPersistedHighlightArtifacts(app && app.canvas);
-    }
+    // Reset any persisted artifacts from previous sessions
+    setTimeout(() => {
+      if (
+        window.BlockSpaceNodeSnap &&
+        typeof window.BlockSpaceNodeSnap.resetPersistedHighlightArtifacts === "function"
+      ) {
+        window.BlockSpaceNodeSnap.resetPersistedHighlightArtifacts(app && app.canvas);
+      }
+    }, 1000);
 
     registerBlockSpaceSettings();
     injectSettingsIcon();

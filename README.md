@@ -67,14 +67,98 @@ Handle intricate positioning with ease without fighting the alignment engine.
 - **Micro-Adjustments:** Hold the **Shift** key while dragging or resizing to temporarily disable snapping. This allows for pixel-perfect placement in tight spaces where you need a node to sit between standard grid points.
 - **Total Control:** Bypass gives you the freedom to handle unique edge cases without needing to toggle snapping off in the settings menu.
 
-## 5. Professional Settings Panel
-Customize your experience with an intuitive, branded interface.
+## 5. Settings Panel
+Customize your experience with an intuitive settings interface.
 
 ![Settings](assets/settings.gif)
 
 - **Informative Tooltips:** Hover over any setting name for a detailed explanation of its behavior.
-- **Real-Time Updates:** Most settings apply immediately, allowing you to fine-tune your margins and colors without refreshing your browser. (A refresh is required after changing the ConnectorStyle)
+- **Real-Time Updates:** All settings apply immediately, allowing you to fine-tune your margins, colors, and connector style without refreshing your browser.
 
+---
+
+## 🏗️ Architecture
+
+Block Space uses an **Adapter Pattern** to support both the classic ComfyUI (V1/LiteGraph) and the upcoming Vue-based interface (V2).
+
+### File Structure
+
+```
+web/
+├── index.js              # Entry point - detects V1/V2 and loads appropriate adapter
+├── core-math.js          # Pure spatial logic (V1/V2 agnostic)
+├── adapter-v1.js         # V1 integration (LiteGraph canvas)
+├── better-nodes-settings.js  # Settings storage utility
+└── extensions/
+    └── comfyui-block-space/
+        └── index.js      # Extension registration
+```
+
+### Core Components
+
+| Module | Purpose |
+|--------|---------|
+| **core-math.js** | Pure spatial calculations: bounds, clustering, raycasting. No UI dependencies. |
+| **adapter-v1.js** | V1 integration: patches `LGraphCanvas`, handles DOM overlays, manages state. |
+| **index.js** | Environment detection and adapter loading. |
+
+### V1/V2 Compatibility
+
+- **V1 (Current):** Full support via `adapter-v1.js`
+- **V2 (Future):** Architecture ready for Vue/DOM adapter
+
+The extension automatically detects the ComfyUI version and loads the appropriate adapter.
+
+---
+
+## 📋 Changelog
+
+### v1.0.1
+
+**Real-Time Settings Updates**
+- All Block Space settings now update immediately without requiring a page refresh
+- Connector style, snap aggressiveness, margins, and guide colors apply instantly
+- New event-driven architecture for settings propagation
+
+**Floating-Point Coordinate Fix**
+- All snapped coordinates are now rounded to integers
+- Eliminates ugly decimals like `450.3333333333333` in saved workflow JSON files
+- Cleaner, more portable workflow files
+
+**Bug Fixes**
+- Fixed "Show Alignment Guides" setting not properly hiding guides when disabled
+- Improved settings change detection for V1 and V2 adapters
+
+**Architecture Improvements**
+- Added `settings-events.js` module for pub/sub settings communication
+- Simplified guide rendering logic based on spatial proximity
+- X/Y axis parity: both axes now use the same snap strength multiplier
+
+**New Settings**
+- **Enable Snapping** - Master toggle for all snapping functionality
+- **Snap Aggressiveness** - Choose how strongly nodes pull into alignment (Low/Medium/High)
+- **Snap Sensitivity** - Control how close you need to be before snapping activates (in pixels)
+- **Horizontal Snap Margin** - Preferred gap when stacking nodes side-by-side
+- **Vertical Snap Margin** - Preferred gap when stacking nodes vertically
+- **Show Alignment Guides** - Toggle the configurable color dotted alignment lines
+- **Snap Pulse Duration** - How long the green border glow lasts after snapping
+
+**Harmonize Algorithm Rewrite**
+- Complete refactor to row-based flexbox-style layout
+- Groups nodes by Y-coordinate into rows (100px threshold)
+- Sorts rows top-to-bottom, nodes within each row left-to-right
+- **Critical fix:** No longer mutates `node.size` - only modifies `node.pos`
+- Preserves original node dimensions while harmonizing positions
+- Eliminates visual distortion with wide "spanning" nodes
+
+---
+
+## 🛠️ Troubleshooting
+
+If Block Space fails to load after an update:
+
+1. **Hard Refresh:** Press `Ctrl+F5` (or `Cmd+Shift+R` on Mac)
+2. **Clear Cache:** Open DevTools (F12) → Right-click refresh → "Empty Cache and Hard Reload"
 ---
 
 ## License

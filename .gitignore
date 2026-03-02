@@ -214,11 +214,14 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+.claude/
 .gemini/
 .geminiignore
 GEMINI.md
 gha-creds-*.json
 
-docs/*
-ref/*
+docs/
+ref/
 node.zip
+.playwright-mcp/
+SNAP_RULES.md
