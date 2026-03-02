@@ -3,41 +3,30 @@ import { app } from "/scripts/app.js";
 const ASSET_VERSION = "2026-03-01-adapter-v2";
 
 function addSetting(definition) {
-  const settings = app && app.ui && app.ui.settings;
-  if (!settings || typeof settings.addSetting !== "function") {
-    return;
-  }
+  const add = app?.ui?.settings?.addSetting;
+  if (typeof add !== "function") return;
   try {
-    settings.addSetting(definition);
-  } catch (error) {
+    add(definition);
+  } catch {
     // Ignore per-setting registration errors
   }
 }
 
 function getSettingValue(id, fallback) {
-  const settings = app && app.ui && app.ui.settings;
-  if (!settings || typeof settings.getSettingValue !== "function") {
-    return fallback;
-  }
+  const get = app?.ui?.settings?.getSettingValue;
+  if (typeof get !== "function") return fallback;
   try {
-    const value = settings.getSettingValue(id);
-    return value == null ? fallback : value;
-  } catch (error) {
+    return get(id) ?? fallback;
+  } catch {
     return fallback;
   }
 }
 
 function applyConnectorSettings() {
-  const isEnabled = getSettingValue("BlockSpace.EnableCustomConnectors", true);
-  const connectorStyle = getSettingValue("BlockSpace.ConnectorStyle", "hybrid");
-  const stubLength = getSettingValue("BlockSpace.ConnectorStubLength", 34);
-  
-  if (!window.ConnectionFocusSettings) {
-    window.ConnectionFocusSettings = {};
-  }
-  window.ConnectionFocusSettings.enabled = isEnabled;
-  window.ConnectionFocusSettings.connectorStyle = connectorStyle;
-  window.ConnectionFocusSettings.connectorStubLength = stubLength;
+  window.ConnectionFocusSettings ??= {};
+  window.ConnectionFocusSettings.enabled = getSettingValue("BlockSpace.EnableCustomConnectors", true);
+  window.ConnectionFocusSettings.connectorStyle = getSettingValue("BlockSpace.ConnectorStyle", "hybrid");
+  window.ConnectionFocusSettings.connectorStubLength = getSettingValue("BlockSpace.ConnectorStubLength", 34);
 }
 
 function registerBlockSpaceSettings() {

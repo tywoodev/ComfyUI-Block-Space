@@ -66,27 +66,18 @@ const HIGHLIGHT_COLOR_MAP = {
  */
 export function getSettingValue(settingId, fallback) {
   try {
-    // Try V2 API first
-    if (
-      window.app &&
-      window.app.extensionManager &&
-      window.app.extensionManager.setting &&
-      typeof window.app.extensionManager.setting.get === "function"
-    ) {
-      const value = window.app.extensionManager.setting.get(settingId);
-      return value == null ? fallback : value;
+    const v2Getter = window.app?.extensionManager?.setting?.get;
+    if (typeof v2Getter === "function") {
+      const value = v2Getter(settingId);
+      return value ?? fallback;
     }
-    // Fall back to V1 API
-    if (
-      window.app &&
-      window.app.ui &&
-      window.app.ui.settings &&
-      typeof window.app.ui.settings.getSettingValue === "function"
-    ) {
-      const value = window.app.ui.settings.getSettingValue(settingId);
-      return value == null ? fallback : value;
+    
+    const v1Getter = window.app?.ui?.settings?.getSettingValue;
+    if (typeof v1Getter === "function") {
+      const value = v1Getter(settingId);
+      return value ?? fallback;
     }
-  } catch (error) {
+  } catch {
     // Ignore setting read failures
   }
   return fallback;
@@ -127,9 +118,11 @@ export function isSnappingEnabled() {
   return !!getSettingValue("BlockSpace.Snap.Enabled", true);
 }
 
+const AGGRESSIVENESS_LEVELS = ["Low", "Medium", "High"];
+
 export function getSnapAggressiveness() {
   const value = getSettingValue("BlockSpace.Snap.Aggressiveness", "Medium");
-  return ["Low", "Medium", "High"].includes(value) ? value : "Medium";
+  return AGGRESSIVENESS_LEVELS.includes(value) ? value : "Medium";
 }
 
 export function getMoveSnapStrength() {
@@ -179,10 +172,7 @@ export function getHighlightEnabled() {
 
 export function getHighlightColor() {
   const value = getSettingValue("BlockSpace.Snap.HighlightColor", "Comfy Blue");
-  if (HIGHLIGHT_COLOR_MAP[value]) {
-    return HIGHLIGHT_COLOR_MAP[value];
-  }
-  return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_HIGHLIGHT_COLOR;
+  return HIGHLIGHT_COLOR_MAP[value] ?? (value?.trim() || DEFAULT_HIGHLIGHT_COLOR);
 }
 
 export function getFeedbackEnabled() {
@@ -198,19 +188,21 @@ export function getFeedbackPulseMs() {
   );
 }
 
+function getFeedbackColor(settingId, defaultColor) {
+  const value = getSettingValue(settingId, defaultColor);
+  return value?.trim() || defaultColor;
+}
+
 export function getFeedbackColorX() {
-  const value = getSettingValue("BlockSpace.Snap.FeedbackColorX", DEFAULT_FEEDBACK_COLOR_X);
-  return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_COLOR_X;
+  return getFeedbackColor("BlockSpace.Snap.FeedbackColorX", DEFAULT_FEEDBACK_COLOR_X);
 }
 
 export function getFeedbackColorY() {
-  const value = getSettingValue("BlockSpace.Snap.FeedbackColorY", DEFAULT_FEEDBACK_COLOR_Y);
-  return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_COLOR_Y;
+  return getFeedbackColor("BlockSpace.Snap.FeedbackColorY", DEFAULT_FEEDBACK_COLOR_Y);
 }
 
 export function getFeedbackColorXY() {
-  const value = getSettingValue("BlockSpace.Snap.FeedbackColorXY", DEFAULT_FEEDBACK_COLOR_XY);
-  return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_FEEDBACK_COLOR_XY;
+  return getFeedbackColor("BlockSpace.Snap.FeedbackColorXY", DEFAULT_FEEDBACK_COLOR_XY);
 }
 
 // ============================================================================
