@@ -62,6 +62,10 @@ const V1State = {
   originalGraphAdd: null,
   originalDrawNodeSS: null,
   settingsUnsubscribe: null,
+  // Event listener handlers for cleanup
+  focusMouseupHandler: null,
+  focusKeydownHandler: null,
+  focusBlurHandler: null,
 };
 
 // ============================================================================
@@ -1872,17 +1876,17 @@ function initConnectionFocusPatches() {
     };
   }
 
-  window.addEventListener("blur", clearFocusState, true);
-  document.addEventListener("mouseup", () => { if (focusState.isHolding) clearFocusState(); }, true);
-  document.addEventListener("keydown", (e) => { if (e?.key === "Escape") clearFocusState(); }, true);
+  // Store named handlers for cleanup
+  V1State.focusBlurHandler = clearFocusState;
+  V1State.focusMouseupHandler = () => { if (focusState.isHolding) clearFocusState(); };
+  V1State.focusKeydownHandler = (e) => { if (e?.key === "Escape") clearFocusState(); };
+
+  window.addEventListener("blur", V1State.focusBlurHandler, true);
+  document.addEventListener("mouseup", V1State.focusMouseupHandler, true);
+  document.addEventListener("keydown", V1State.focusKeydownHandler, true);
 
   window.__connectionFocusState = focusState;
   window.LGraphCanvas.prototype.__connectionFocusPatched = true;
-}
-
-function initSmartDropPatches() {
-  if (!window.LGraphCanvas?.prototype) return;
-  window.LGraphCanvas.prototype.__smartDropPatched = true;
 }
 
 function initSmartSizingPatches() {
@@ -2091,18 +2095,10 @@ function redrawCanvas() {
   const canvas = getLGraphCanvas();
   if (!canvas) return;
   
-  // Mark dirty first
+  // Mark dirty to trigger redraw on next animation frame
+  // This avoids screen tearing from forced synchronous draws
   if (canvas.setDirty) {
     canvas.setDirty(true, true);
-  }
-  
-  // Try to force an immediate redraw
-  if (canvas.draw) {
-    try {
-      canvas.draw();
-    } catch (e) {
-      // Ignore draw errors
-    }
   }
 }
 
@@ -2151,7 +2147,6 @@ export function initV1Adapter() {
   initNodeArrangement();
   initConnectionFocusPatches();
   initNodeSnappingPatches();
-  initSmartDropPatches();
   initUnifiedMouseUpHandler();
 
   // Subscribe to setting changes for real-time updates
@@ -2163,11 +2158,33 @@ export function initV1Adapter() {
 }
 
 export function cleanupV1Adapter() {
+  // Remove global event listeners first
+  if (V1State.focusBlurHandler) {
+    window.removeEventListener("blur", V1State.focusBlurHandler, true);
+    V1State.focusBlurHandler = null;
+  }
+  if (V1State.focusMouseupHandler) {
+    document.removeEventListener("mouseup", V1State.focusMouseupHandler, true);
+    V1State.focusMouseupHandler = null;
+  }
+  if (V1State.focusKeydownHandler) {
+    document.removeEventListener("keydown", V1State.focusKeydownHandler, true);
+    V1State.focusKeydownHandler = null;
+  }
+
   if (V1State.originalProcessMouseMove) window.LGraphCanvas.prototype.processMouseMove = V1State.originalProcessMouseMove;
   if (V1State.originalProcessMouseUp) window.LGraphCanvas.prototype.processMouseUp = V1State.originalProcessMouseUp;
   if (V1State.originalProcessMouseDown) window.LGraphCanvas.prototype.processMouseDown = V1State.originalProcessMouseDown;
   if (V1State.originalRenderLink) window.LGraphCanvas.prototype.renderLink = V1State.originalRenderLink;
-  if (V1State.originalDrawNodeCF) window.LGraphCanvas.prototype.drawNode = V1State.originalDrawNodeCF;
+  
+  // Restore drawNode in reverse order of patching: SS first, then CF
+  // This ensures we don't lose the chain of original references
+  if (V1State.originalDrawNodeSS) {
+    window.LGraphCanvas.prototype.drawNode = V1State.originalDrawNodeSS;
+  } else if (V1State.originalDrawNodeCF) {
+    window.LGraphCanvas.prototype.drawNode = V1State.originalDrawNodeCF;
+  }
+  
   if (V1State.originalComputeSize) window.LGraphNode.prototype.computeSize = V1State.originalComputeSize;
   if (V1State.originalSetSize) window.LGraphNode.prototype.setSize = V1State.originalSetSize;
   if (V1State.originalConfigure) window.LGraphNode.prototype.configure = V1State.originalConfigure;
@@ -2193,7 +2210,7 @@ export function cleanupV1Adapter() {
   if (window.LGraphCanvas?.prototype) {
     window.LGraphCanvas.prototype.__blockSpaceNodeSnapPatched = false;
     window.LGraphCanvas.prototype.__connectionFocusPatched = false;
-    window.LGraphCanvas.prototype.__smartDropPatched = false;
+
   }
   if (window.LGraphNode?.prototype) {
     window.LGraphNode.prototype.__smartSizingPatched = false;
