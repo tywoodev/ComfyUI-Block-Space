@@ -220,6 +220,8 @@ __marimo__/
 GEMINI.md
 gha-creds-*.json
 
-docs/*
-ref/*
+docs/
+ref/
 node.zip
+.playwright-mcp/
+SNAP_RULES.md
