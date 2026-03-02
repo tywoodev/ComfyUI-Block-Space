@@ -1291,7 +1291,7 @@ function arrangeSelection(canvas, mode) {
   const selected = canvas.selected_nodes;
   if (!selected) return;
 
-  const nodes = Object.values(selected).filter(n => n?.pos);
+  const nodes = Object.values(selected).filter(n => n?.pos && n?.size);
   if (nodes.length < 2) return;
 
   canvas.graph?.beforeChange?.();
@@ -1300,65 +1300,160 @@ function arrangeSelection(canvas, mode) {
   const vMargin = getVSnapMargin();
   const titleH = Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24;
 
-  nodes.sort((a, b) => Math.abs(a.pos[1] - b.pos[1]) > 5 ? a.pos[1] - b.pos[1] : a.pos[0] - b.pos[0]);
-  const anchor = nodes[0];
+  const anchor = [...nodes].sort((a, b) => Math.abs(a.pos[1] - b.pos[1]) > 50 ? a.pos[1] - b.pos[1] : a.pos[0] - b.pos[0])[0];
   const startX = anchor.pos[0];
   const startY = anchor.pos[1];
 
   if (mode === "grid") {
-    const columns = [];
-    const sortedByX = [...nodes].sort((a, b) => a.pos[0] - b.pos[0]);
+    // --- HYBRID BLOCK-GRID ALGORITHM (FULL PROPORTIONAL WIDTH & HEIGHT) ---
 
-    for (const node of sortedByX) {
-      let placed = false;
-      for (const col of columns) {
-        const avgX = col.reduce((sum, n) => sum + n.pos[0], 0) / col.length;
-        if (Math.abs(node.pos[0] - avgX) < 150) {
-          col.push(node);
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) columns.push([node]);
-    }
-
-    columns.forEach(col => col.sort((a, b) => a.pos[1] - b.pos[1]));
-    columns.sort((a, b) => a[0].pos[0] - b[0].pos[0]);
-
-    const colWidths = columns.map(col => Math.max(...col.map(n => {
+    // 1. Identify Layout Bounds to detect wide "Spanning" nodes
+    let minX = Infinity, maxX = -Infinity;
+    nodes.forEach(n => {
       const b = getNodeBounds(n);
-      return b ? b.right - b.left : 0;
-    })));
-
-    const colHeights = columns.map(col => {
-      const sum = col.reduce((s, n) => {
-        const b = getNodeBounds(n);
-        return s + (b ? b.bottom - b.top : 0);
-      }, 0);
-      return sum + (col.length - 1) * vMargin;
-    });
-
-    const targetTotalHeight = Math.max(...colHeights);
-    let currentX = startX;
-
-    for (let c = 0; c < columns.length; c++) {
-      const col = columns[c];
-      let currentY = startY;
-      const extraHeightNeeded = targetTotalHeight - colHeights[c];
-      const heightBonusPerNode = extraHeightNeeded / col.length;
-
-      for (const node of col) {
-        const bounds = getNodeBounds(node);
-        node.pos[0] = Math.round(currentX);
-        node.pos[1] = Math.round(currentY);
-        const newContentHeight = Math.max(node.size[1], (bounds ? bounds.bottom - bounds.top : 0) + heightBonusPerNode - titleH);
-        node.size[1] = Math.round(newContentHeight);
-        node.size[0] = Math.round(colWidths[c]);
-        currentY += newContentHeight + titleH + vMargin;
+      if (b) {
+        if (b.left < minX) minX = b.left;
+        if (b.right > maxX) maxX = b.right;
       }
-      currentX += colWidths[c] + hMargin;
+    });
+    const totalSpan = maxX - minX;
+
+    // 2. Sort nodes Top-to-Bottom
+    const sortedNodes = [...nodes].sort((a, b) => a.pos[1] - b.pos[1]);
+
+    // 3. Partition into Sections (Spanning vs Grid Block)
+    const sections = [];
+    let currentGridNodes = [];
+
+    for (const node of sortedNodes) {
+      const isSpanning = node.size[0] > totalSpan * 0.6;
+      if (isSpanning) {
+        if (currentGridNodes.length > 0) {
+          sections.push({ type: 'grid', nodes: currentGridNodes });
+          currentGridNodes = [];
+        }
+        sections.push({ type: 'spanning', node: node });
+      } else {
+        currentGridNodes.push(node);
+      }
     }
+    if (currentGridNodes.length > 0) {
+      sections.push({ type: 'grid', nodes: currentGridNodes });
+    }
+
+    // 4. Process Grid Sections & Find Target Global Width
+    let globalMaxWidth = 0;
+
+    for (const sec of sections) {
+      if (sec.type === 'spanning') {
+        const w = sec.node.size[0];
+        if (w > globalMaxWidth) globalMaxWidth = w;
+      } else {
+        // Group grid nodes into columns
+        const cols = [];
+        const sortedByX = [...sec.nodes].sort((a, b) => a.pos[0] - b.pos[0]);
+        for (const n of sortedByX) {
+          let placed = false;
+          for (const col of cols) {
+            const avgX = col.reduce((sum, node) => sum + node.pos[0], 0) / col.length;
+            if (Math.abs(n.pos[0] - avgX) < 150) { 
+              col.push(n);
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) cols.push([n]);
+        }
+        
+        cols.sort((a, b) => a[0].pos[0] - b[0].pos[0]);
+        cols.forEach(col => col.sort((a, b) => a.pos[1] - b.pos[1]));
+
+        sec.columns = cols;
+        
+        // Calculate natural section width
+        let naturalWidth = (cols.length - 1) * hMargin;
+        cols.forEach(col => {
+          const maxColWidth = Math.max(...col.map(n => n.size[0]));
+          naturalWidth += maxColWidth;
+        });
+
+        if (naturalWidth > globalMaxWidth) globalMaxWidth = naturalWidth;
+      }
+    }
+
+    // 5. Apply Layout with Proportional Scaling (Widths AND Heights)
+    let currentY = startY;
+
+    for (const sec of sections) {
+      if (sec.type === 'spanning') {
+        sec.node.pos[0] = Math.round(startX);
+        sec.node.pos[1] = Math.round(currentY);
+        sec.node.size[0] = Math.round(globalMaxWidth);
+        
+        currentY += sec.node.size[1] + titleH + vMargin;
+      } else {
+        const cols = sec.columns;
+        const numCols = cols.length;
+        
+        // --- COLUMN WIDTH PROPORTIONS ---
+        const colNaturalWidths = cols.map(col => Math.max(...col.map(n => n.size[0])));
+        const totalNaturalWidth = colNaturalWidths.reduce((sum, w) => sum + w, 0);
+        const targetAvailableWidth = globalMaxWidth - (numCols - 1) * hMargin;
+
+        // --- FIND TARGET BLOCK HEIGHT ---
+        let maxColHeight = 0;
+        cols.forEach(col => {
+          let colNaturalHeight = (col.length - 1) * vMargin;
+          col.forEach(n => {
+             const b = getNodeBounds(n);
+             colNaturalHeight += b ? (b.bottom - b.top) : (n.size[1] + titleH);
+          });
+          if (colNaturalHeight > maxColHeight) maxColHeight = colNaturalHeight;
+        });
+
+        // Layout columns
+        let currentX = startX;
+        for (let i = 0; i < cols.length; i++) {
+          const col = cols[i];
+          const numNodes = col.length;
+          
+          // Determine this column's proportional width
+          const targetColWidth = totalNaturalWidth === 0 
+              ? targetAvailableWidth / numCols 
+              : (colNaturalWidths[i] / totalNaturalWidth) * targetAvailableWidth;
+
+          // --- NODE HEIGHT PROPORTIONS ---
+          const nodeNaturalHeights = col.map(n => {
+            const b = getNodeBounds(n);
+            return b ? (b.bottom - b.top) : (n.size[1] + titleH);
+          });
+          const totalNaturalHeight = nodeNaturalHeights.reduce((sum, h) => sum + h, 0);
+          const targetAvailableHeight = maxColHeight - (numNodes - 1) * vMargin;
+
+          let colY = currentY;
+          for (let j = 0; j < numNodes; j++) {
+            const node = col[j];
+            
+            // Determine this specific node's proportional height
+            const targetNodeHeight = totalNaturalHeight === 0 
+                ? targetAvailableHeight / numNodes 
+                : (nodeNaturalHeights[j] / totalNaturalHeight) * targetAvailableHeight;
+
+            node.pos[0] = Math.round(currentX);
+            node.pos[1] = Math.round(colY);
+            node.size[0] = Math.round(targetColWidth);
+            node.size[1] = Math.round(Math.max(10, targetNodeHeight - titleH));
+
+            colY += targetNodeHeight + vMargin;
+          }
+          currentX += targetColWidth + hMargin;
+        }
+        currentY += maxColHeight + vMargin;
+      }
+    }
+
   } else {
+    // --- STANDARD X / Y STACKING ---
     for (let i = 1; i < nodes.length; i++) {
       const prev = nodes[i - 1];
       const node = nodes[i];
