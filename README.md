@@ -73,7 +73,7 @@ Customize your experience with an intuitive, branded interface.
 ![Settings](assets/settings.gif)
 
 - **Informative Tooltips:** Hover over any setting name for a detailed explanation of its behavior.
-- **Real-Time Updates:** Most settings apply immediately, allowing you to fine-tune your margins and colors without refreshing your browser. (A refresh is required after changing the ConnectorStyle)
+- **Real-Time Updates:** All settings apply immediately, allowing you to fine-tune your margins, colors, and connector style without refreshing your browser.
 
 ---
 
@@ -111,6 +111,31 @@ docs/
 - **V2 (Future):** Architecture ready for Vue/DOM adapter
 
 The extension automatically detects the ComfyUI version and loads the appropriate adapter.
+
+---
+
+## 📋 Changelog
+
+### v1.0.1
+
+**Real-Time Settings Updates**
+- All Block Space settings now update immediately without requiring a page refresh
+- Connector style, snap aggressiveness, margins, and guide colors apply instantly
+- New event-driven architecture for settings propagation
+
+**Floating-Point Coordinate Fix**
+- All snapped coordinates are now rounded to integers
+- Eliminates ugly decimals like `450.3333333333333` in saved workflow JSON files
+- Cleaner, more portable workflow files
+
+**Bug Fixes**
+- Fixed "Show Alignment Guides" setting not properly hiding guides when disabled
+- Improved settings change detection for V1 and V2 adapters
+
+**Architecture Improvements**
+- Added `settings-events.js` module for pub/sub settings communication
+- Simplified guide rendering logic based on spatial proximity
+- X/Y axis parity: both axes now use the same snap strength multiplier
 
 ---
 
