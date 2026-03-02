@@ -67,8 +67,8 @@ Handle intricate positioning with ease without fighting the alignment engine.
 - **Micro-Adjustments:** Hold the **Shift** key while dragging or resizing to temporarily disable snapping. This allows for pixel-perfect placement in tight spaces where you need a node to sit between standard grid points.
 - **Total Control:** Bypass gives you the freedom to handle unique edge cases without needing to toggle snapping off in the settings menu.
 
-## 5. Professional Settings Panel
-Customize your experience with an intuitive, branded interface.
+## 5. Settings Panel
+Customize your experience with an intuitive settings interface.
 
 ![Settings](assets/settings.gif)
 
@@ -92,9 +92,6 @@ web/
 └── extensions/
     └── comfyui-block-space/
         └── index.js      # Extension registration
-
-docs/
-└── RECOVERY.md           # Troubleshooting guide
 ```
 
 ### Core Components
@@ -143,8 +140,7 @@ The extension automatically detects the ComfyUI version and loads the appropriat
 - **Snap Sensitivity** - Control how close you need to be before snapping activates (in pixels)
 - **Horizontal Snap Margin** - Preferred gap when stacking nodes side-by-side
 - **Vertical Snap Margin** - Preferred gap when stacking nodes vertically
-- **Show Alignment Guides** - Toggle the purple dotted alignment lines
-- **Guide Line Color** - Choose your preferred guide color from 7 presets
+- **Show Alignment Guides** - Toggle the configurable color dotted alignment lines
 - **Snap Pulse Duration** - How long the green border glow lasts after snapping
 
 **Harmonize Algorithm Rewrite**
@@ -163,8 +159,6 @@ If Block Space fails to load after an update:
 
 1. **Hard Refresh:** Press `Ctrl+F5` (or `Cmd+Shift+R` on Mac)
 2. **Clear Cache:** Open DevTools (F12) → Right-click refresh → "Empty Cache and Hard Reload"
-3. **See [docs/RECOVERY.md](docs/RECOVERY.md)** for detailed recovery steps
-
 ---
 
 ## License
