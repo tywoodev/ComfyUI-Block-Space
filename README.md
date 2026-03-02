@@ -137,6 +137,16 @@ The extension automatically detects the ComfyUI version and loads the appropriat
 - Simplified guide rendering logic based on spatial proximity
 - X/Y axis parity: both axes now use the same snap strength multiplier
 
+**New Settings**
+- **Enable Snapping** - Master toggle for all snapping functionality
+- **Snap Aggressiveness** - Choose how strongly nodes pull into alignment (Low/Medium/High)
+- **Snap Sensitivity** - Control how close you need to be before snapping activates (in pixels)
+- **Horizontal Snap Margin** - Preferred gap when stacking nodes side-by-side
+- **Vertical Snap Margin** - Preferred gap when stacking nodes vertically
+- **Show Alignment Guides** - Toggle the purple dotted alignment lines
+- **Guide Line Color** - Choose your preferred guide color from 7 presets
+- **Snap Pulse Duration** - How long the green border glow lasts after snapping
+
 ---
 
 ## 🛠️ Troubleshooting
