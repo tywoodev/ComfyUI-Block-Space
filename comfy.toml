@@ -1,6 +1,6 @@
 [project]
-name = "ComfyUI-Block-Space-V1.0.1"
-version = "1.0.1"
+name = "ComfyUI-Block-Space"
+version = "1.0.2"
 description = "A Figma-style layout and snapping engine for the ComfyUI canvas."
 license = "MIT"
 repository = "https://github.com/tywoodev/ComfyUI-Block-Space"
