@@ -1,14 +1,14 @@
 [project]
-name = "comfyui-block-space"
-version = "1.0.0"
+name = "ComfyUI-Block-Space-V1.0.1"
+version = "1.0.1"
 description = "A Figma-style layout and snapping engine for the ComfyUI canvas."
 license = "MIT"
 repository = "https://github.com/tywoodev/ComfyUI-Block-Space"
 
 [publisher]
-name = "ty-woo"
+name = "t-dub"
 
 [tool.comfy]
-PublisherId = "ty-woo" # TODO (fill in Publisher ID from Comfy Registry Website).
-DisplayName = "ComfyUI-Block-Space" # Display name for the Custom Node. Can be changed later.
-Icon = "https://github.com/tywoodev/ComfyUI-Block-Space/blob/main/assets/logo.svg" # SVG, PNG, JPG or GIF (MAX. 800x400px)
+PublisherId = "t-dub" 
+DisplayName = "ComfyUI-Block-Space"
+Icon = "https://github.com/tywoodev/ComfyUI-Block-Space/blob/main/assets/logo.svg"

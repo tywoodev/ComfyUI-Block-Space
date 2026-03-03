@@ -225,3 +225,5 @@ ref/
 node.zip
 .playwright-mcp/
 SNAP_RULES.md
+authentication.json
+auth.json
