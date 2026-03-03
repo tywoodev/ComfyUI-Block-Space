@@ -246,21 +246,6 @@ function getNodeMinSize(node) {
     minWidth = Math.max(minWidth, Number(node.min_size[0]) || minWidth);
     minHeight = Math.max(minHeight, Number(node.min_size[1]) || minHeight);
   }
-  let hasSmartMin = false;
-  if (node.__smartMinSize && node.__smartMinSize.length >= 2) {
-    minWidth = Math.max(minWidth, Number(node.__smartMinSize[0]) || minWidth);
-    minHeight = Math.max(minHeight, Number(node.__smartMinSize[1]) || minHeight);
-    hasSmartMin = true;
-  }
-  if (!hasSmartMin && typeof node.computeSize === "function") {
-    try {
-      const computed = node.computeSize(node.size?.length >= 1 ? node.size[0] : undefined);
-      if (computed && computed.length >= 2) {
-        minWidth = Math.max(minWidth, Number(computed[0]) || minWidth);
-        minHeight = Math.max(minHeight, Number(computed[1]) || minHeight);
-      }
-    } catch (error) {}
-  }
   return [minWidth, minHeight];
 }
 
@@ -377,7 +362,7 @@ function applyResizeSnapping(canvas, resizingNode) {
   const currentThresholdY = wasSnappedY ? exitThresholdCanvas : thresholdCanvas;
 
   if (bestYHeight !== null && bestYDelta <= currentThresholdY) {
-    const nextContentHeight = Math.max(minSize[1], bestYHeight - titleH);
+    const nextContentHeight = bestYHeight - titleH;
     if (isFinite(nextContentHeight) && Math.abs(nextContentHeight - resizingNode.size[1]) > 0.01) {
       resizingNode.size[1] = Math.round(nextContentHeight);
       didSnap = true;
@@ -477,7 +462,7 @@ function maybeCommitSnapOnMouseUp(canvas, nodeHint) {
       appliedX = true;
     }
     if (snap.yDidSnap && typeof snap.yTargetBottom === "number" && Math.abs(bounds.bottom - snap.yTargetBottom) <= tolerance) {
-      node.size[1] = Math.round(Math.max(minSize[1], (snap.yTargetBottom - bounds.top) - titleH));
+      node.size[1] = Math.round((snap.yTargetBottom - bounds.top) - titleH);
       appliedY = true;
     }
   }
@@ -2008,43 +1993,22 @@ function initSmartSizingPatches() {
   if (typeof V1State.originalComputeSize !== "function" || typeof V1State.originalSetSize !== "function") return;
 
   window.LGraphNode.prototype.computeSize = function (out) {
-    const size = out || new Float32Array([0, 0]);
-    let rows = Math.max(this.inputs?.length || 1, this.outputs?.length || 1, 1);
-
+    const size = V1State.originalComputeSize.apply(this, arguments);
     const maxInputWidth = getSlotMaxWidth(this.inputs);
     const maxOutputWidth = getSlotMaxWidth(this.outputs);
     const titleWidth = Math.min(MAX_TEXT_WIDTH, measureTextWidth(truncateToWidth(this.title || "", MAX_TEXT_WIDTH)));
-
     const slotTextWidth = Math.min((MAX_TEXT_WIDTH * 2) + PORT_PADDING, maxInputWidth + maxOutputWidth + PORT_PADDING);
     const textMinWidth = Math.max(slotTextWidth, titleWidth + PORT_PADDING, MIN_NODE_WIDTH);
-
     const widgetBounds = computeWidgetBounds(this, textMinWidth);
     let minWidth = Math.max(textMinWidth, widgetBounds.width);
-
-    const slotStartY = this.constructor.slot_start_y || 0;
-    const slotHeight = window.LiteGraph?.NODE_SLOT_HEIGHT || 20;
-    let minHeight = slotStartY + rows * slotHeight;
-
-    if (widgetBounds.height > 0) {
-      if (this.widgets_up) minHeight = Math.max(minHeight, widgetBounds.height);
-      else if (this.widgets_start_y != null) minHeight = Math.max(minHeight, widgetBounds.height + this.widgets_start_y);
-      else minHeight += widgetBounds.height;
-    }
-
-    if (this.constructor.min_height && minHeight < this.constructor.min_height) {
-      minHeight = this.constructor.min_height;
-    }
-    minHeight += 6;
 
     const resizing = isNodeBeingResized(this);
     if (!resizing && this.__smartUserSize?.length >= 2) {
       minWidth = Math.max(minWidth, this.__smartUserSize[0]);
-      minHeight = Math.max(minHeight, this.__smartUserSize[1]);
     }
 
-    this.__smartMinSize = [minWidth, minHeight];
-    size[0] = minWidth;
-    size[1] = minHeight;
+    size[0] = Math.max(size[0], minWidth);
+    // Note: size[1] (height) is left as returned by originalComputeSize
     return size;
   };
 
