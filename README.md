@@ -58,6 +58,7 @@ Choose the aesthetic that best fits your workflow and reduces visual noise.
 - **Hybrid Style:** The best of both worlds. Features elegant curves for short hops and straight lines for longer runs, maintaining a clean yet organic look.
 - **Straight Style:** Minimalist and direct. Perfect for high-density workflows where reducing overlapping curves is a priority.
 - **Angled Style:** A technical, "circuit-board" aesthetic that creates very clear horizontal and vertical pathways, ideal for highly structured layouts.
+- **Hidden Style:** Maximum visual clarity. All wires and flow animations are hidden by default and only reveal themselves (using the Hybrid style) when you click and hold a node.
 
 ## 4. Shift to Bypass Snapping
 Handle intricate positioning with ease without fighting the alignment engine.
@@ -112,6 +113,14 @@ The extension automatically detects the ComfyUI version and loads the appropriat
 ---
 
 ## 📋 Changelog
+
+### v1.0.5
+
+**New "Hidden" Connector Style**
+- Added a new minimalist connector style that hides all wires by default
+- Wires and flow animations automatically reveal themselves when clicking and holding a node
+- Revealed wires use the "Hybrid" (curved) routing for maximum clarity during interaction
+- Reduces visual clutter in large graphs while maintaining full traceability
 
 ### v1.0.1
 

@@ -62,7 +62,7 @@ function registerBlockSpaceSettings() {
     id: "BlockSpace.ConnectorStyle",
     name: "Connector Style",
     type: "combo",
-    options: ["hybrid", "straight", "angled"],
+    options: ["hybrid", "straight", "angled", "hidden"],
     defaultValue: "hybrid",
     onChange: (value) => applyConnectorSettingsAndEmit("BlockSpace.ConnectorStyle", value),
     tooltip: "Choose the routing algorithm for node wires. Hybrid is recommended for most workflows.",

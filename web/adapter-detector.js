@@ -3,7 +3,7 @@
  * Defaults to V1 immediately, switches to V2 if detected
  */
 
-const BLOCKSPACE_VERSION = "2.0.0-adapter";
+const BLOCKSPACE_VERSION = "1.0.5";
 
 // Detection state
 let currentAdapter = 'v1';
