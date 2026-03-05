@@ -6,9 +6,9 @@ license = "MIT"
 repository = "https://github.com/tywoodev/ComfyUI-Block-Space"
 
 [publisher]
-name = "t-dub"
+name = "ty-woo"
 
 [tool.comfy]
-PublisherId = "t-dub" 
+PublisherId = "ty-woo" 
 DisplayName = "ComfyUI-Block-Space"
 Icon = "https://github.com/tywoodev/ComfyUI-Block-Space/blob/main/assets/logo.svg"
