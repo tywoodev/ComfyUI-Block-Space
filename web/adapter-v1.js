@@ -707,7 +707,7 @@ function getFocusSettings() {
   }
   settings.connectorStubLength = Math.max(10, Math.min(80, settings.connectorStubLength));
   const style = settings.connectorStyle;
-  if (style !== "straight" && style !== "hybrid" && style !== "angled") {
+  if (style !== "straight" && style !== "hybrid" && style !== "angled" && style !== "hidden") {
     settings.connectorStyle = defaultFocusSettings.connectorStyle;
   }
   if (typeof settings.enabled !== "boolean") {
@@ -891,7 +891,7 @@ function getSlotColor(node, isInput, slotIndex) {
   return null;
 }
 
-function drawFlowOverlay(canvas, argsLike, animationTime, sourceOffset, targetOffset) {
+function drawFlowOverlay(canvas, argsLike, animationTime, sourceOffset, targetOffset, styleOverride) {
   if (!canvas || !argsLike?.length) return;
   const ctx = argsLike[0];
   if (!ctx?.setLineDash) return;
@@ -903,6 +903,7 @@ function drawFlowOverlay(canvas, argsLike, animationTime, sourceOffset, targetOf
   const dashOffset = -((animationTime || 0) * 0.028);
   const prevLineWidth = ctx.lineWidth || 1;
   const stub = settings.connectorStubLength;
+  const style = styleOverride || settings.connectorStyle;
 
   ctx.save();
   ctx.globalAlpha = 0.8;
@@ -912,7 +913,7 @@ function drawFlowOverlay(canvas, argsLike, animationTime, sourceOffset, targetOf
   ctx.lineDashOffset = dashOffset;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  drawConfiguredPath(ctx, ax, ay, bx, by, stub, settings.connectorStyle, sourceOffset || 0, targetOffset || 0);
+  drawConfiguredPath(ctx, ax, ay, bx, by, stub, style, sourceOffset || 0, targetOffset || 0);
   ctx.stroke();
   ctx.restore();
 }
@@ -939,7 +940,7 @@ function drawSlotRing(node, ctx, isInput, slotIndex, color) {
   ctx.restore();
 }
 
-function drawHardAngleLink(argsLike, sourceOffset, targetOffset, color) {
+function drawHardAngleLink(argsLike, sourceOffset, targetOffset, color, styleOverride) {
   if (!argsLike?.length) return;
   const ctx = argsLike[0];
   if (!ctx) return;
@@ -947,11 +948,13 @@ function drawHardAngleLink(argsLike, sourceOffset, targetOffset, color) {
   if (!a || !b || a.length < 2 || b.length < 2) return;
 
   const settings = getFocusSettings();
+  const style = styleOverride || settings.connectorStyle;
+
   ctx.save();
   if (color) ctx.strokeStyle = color;
   ctx.lineJoin = "miter";
   ctx.lineCap = "round";
-  drawConfiguredPath(ctx, a[0], a[1], b[0], b[1], settings.connectorStubLength, settings.connectorStyle, sourceOffset || 0, targetOffset || 0);
+  drawConfiguredPath(ctx, a[0], a[1], b[0], b[1], settings.connectorStubLength, style, sourceOffset || 0, targetOffset || 0);
   ctx.stroke();
   ctx.restore();
 }
@@ -959,12 +962,21 @@ function drawHardAngleLink(argsLike, sourceOffset, targetOffset, color) {
 function drawConfiguredPath(ctx, ax, ay, bx, by, stub, style, sourceOffset, targetOffset) {
   const so = Number(sourceOffset) || 0;
   const to = Number(targetOffset) || 0;
-  if (style === "straight") {
-    drawStraightPath(ctx, ax, ay, bx, by, stub, so, to);
-  } else if (style === "angled") {
-    drawAngledPath(ctx, ax, ay, bx, by, stub, so, to);
-  } else {
-    drawHybridPath(ctx, ax, ay, bx, by, stub);
+  
+  if (style === "hidden") {
+    return; // Draw nothing
+  }
+
+  switch (style) {
+    case "straight":
+      drawStraightPath(ctx, ax, ay, bx, by, stub, so, to);
+      break;
+    case "angled":
+      drawAngledPath(ctx, ax, ay, bx, by, stub, so, to);
+      break;
+    default:
+      drawHybridPath(ctx, ax, ay, bx, by, stub);
+      break;
   }
 }
 
@@ -1872,7 +1884,8 @@ function initConnectionFocusPatches() {
   };
 
   window.LGraphCanvas.prototype.renderLink = function(ctx, a, b) {
-    if (!getFocusSettings().enabled) return V1State.originalRenderLink.apply(this, arguments);
+    const settings = getFocusSettings();
+    if (!settings.enabled) return V1State.originalRenderLink.apply(this, arguments);
 
     const link = extractLinkInfo(arguments);
     if (!link) return V1State.originalRenderLink.apply(this, arguments);
@@ -1880,13 +1893,21 @@ function initConnectionFocusPatches() {
     const originNode = this.graph.getNodeById(link.origin_id);
     const slotColor = getSlotColor(originNode, false, link.origin_slot);
     const focus = getActiveFocus(this);
+    const isHiddenStyle = settings.connectorStyle === "hidden";
 
-    if (!focus) return drawHardAngleLink(arguments, 0, 0, slotColor);
+    // Visibility Check: If style is hidden and no node is being interacted with, we draw nothing.
+    if (isHiddenStyle && !focus) return;
+
+    if (!focus) {
+      return drawHardAngleLink(arguments, 0, 0, slotColor);
+    }
 
     const linkKey = link.id != null ? link.id : null;
     const isConnected = focus.connectedLinkIds[linkKey] || focus.connectedLinkIds[String(linkKey)];
 
+    // Unconnected links are invisible in Hidden mode, dimmed in others.
     if (!isConnected) {
+      if (isHiddenStyle) return;
       ctx.save();
       ctx.globalAlpha *= 0.12;
       const result = drawHardAngleLink(arguments, 0, 0, slotColor);
@@ -1894,19 +1915,20 @@ function initConnectionFocusPatches() {
       return result;
     }
 
+    // Resolve effective style: Hidden reveals itself as Hybrid.
+    const effectiveStyle = isHiddenStyle ? "hybrid" : settings.connectorStyle;
+    
     let sourceOffset = 0, targetOffset = 0;
-    const style = getFocusSettings().connectorStyle;
-    if ((style === "straight" || style === "angled") && linkKey != null) {
+    if ((effectiveStyle === "straight" || effectiveStyle === "angled") && linkKey != null) {
       const laneOffset = Number(focus.linkLaneOffsets?.[String(linkKey)]) || 0;
       if (link.origin_id === focus.activeNodeId) sourceOffset = laneOffset;
       else if (link.target_id === focus.activeNodeId) targetOffset = laneOffset;
     }
 
-    const result = drawHardAngleLink(arguments, sourceOffset, targetOffset, slotColor);
+    drawHardAngleLink(arguments, sourceOffset, targetOffset, slotColor, effectiveStyle);
     if (link.origin_id === focus.activeNodeId || link.target_id === focus.activeNodeId) {
-      drawFlowOverlay(this, arguments, focus.animationTime || 0, sourceOffset, targetOffset);
+      drawFlowOverlay(this, arguments, focus.animationTime || 0, sourceOffset, targetOffset, effectiveStyle);
     }
-    return result;
   };
 
   if (typeof V1State.originalDrawNodeCF === "function") {
